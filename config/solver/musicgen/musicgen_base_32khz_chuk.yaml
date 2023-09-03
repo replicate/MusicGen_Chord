@@ -1,0 +1,103 @@
+# @package __global__
+
+# This is the training loop solver
+# for the base MusicGen model (text-to-music)
+# on monophonic audio sampled at 32 kHz
+defaults:
+  - musicgen/default
+  - /model: lm/musicgen_lm
+  - override /dset: internal/chuki
+  - _self_
+
+fsdp:
+  use: true
+  
+autocast: false
+# autocast_dtype: float16
+
+# EnCodec large trained on mono-channel music audio sampled at 32khz
+# with a total stride of 640 leading to 50 frames/s.
+# rvq.n_q=4, rvq.bins=2048, no quantization dropout
+# (transformer_lm card and n_q must be compatible)
+compression_model_checkpoint: //pretrained/facebook/encodec_32khz
+
+channels: 1
+sample_rate: 32000
+
+deadlock:
+  use: true  # deadlock detection
+
+dataset:
+  num_workers: 8
+  batch_size: 32  # 32 GPUs
+  sample_on_weight: false  # Uniform sampling all the way
+  sample_on_duration: false  # Uniform sampling all the way
+  min_segment_ratio: 0.9
+  valid:
+    num_samples: 8
+  train:
+    num_samples: 40
+  generate:
+    num_samples: 8
+
+checkpoint:
+  save_every: 5
+  save_last: true
+  keep_last: 5
+
+generate:
+  every: 1
+  num_workers: 8
+  path: samples
+  audio:
+    format: wav
+    strategy: loudness
+    sample_rate: ${sample_rate}
+    loudness_headroom_db: 14
+  lm:
+    prompted_samples: false
+    unprompted_samples: true
+    gen_gt_samples: false
+    prompt_duration: null   # if not set, will use dataset.generate.segment_duration / 4
+    gen_duration: null      # if not set, will use dataset.generate.segment_duration
+    remove_prompts: false
+    # generation params
+    use_sampling: true
+    temp: 1.0
+    top_k: 250
+    top_p: 0.0
+
+evaluate:
+  every: 10
+
+optim:
+  epochs: 100
+  optimizer: dadam
+  lr: 1.0
+  updates_per_epoch: 500
+  ema:
+    use: true
+    updates: 10
+    device: cuda
+
+logging:
+  level: INFO
+  log_updates: 100
+  log_tensorboard: true
+  log_wandb: false
+
+tensorboard:
+  with_media_logging: true
+
+wandb:
+  with_media_logging: true
+  project: audiocraft # project name
+  name:  # optional name for the experiment
+  group:  # optional group
+
+schedule:
+  lr_scheduler: cosine
+  cosine:
+    warmup: 0 # was 4000
+    lr_min_ratio: 0.0
+    cycle_length: 1.0

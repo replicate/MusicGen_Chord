@@ -1,0 +1,32 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+av = "*"
+einops = "*"
+flashy = ">=0.0.1"
+hydra-core = ">=1.1"
+hydra-colorlog = "*"
+julius = "*"
+num2words = "*"
+numpy = "*"
+sentencepiece = "*"
+spacy = "==3.5.2"
+torch = ">=2.0.0"
+torchaudio = ">=2.0.0"
+huggingface-hub = "*"
+tqdm = "*"
+transformers = ">=4.31.0"
+xformers = "*"
+demucs = "*"
+librosa = "*"
+gradio = "*"
+torchmetrics = "*"
+encodec = "*"
+
+[dev-packages]
+
+[requires]
+python_version = "3.8"

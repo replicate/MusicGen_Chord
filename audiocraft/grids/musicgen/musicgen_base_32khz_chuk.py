@@ -12,7 +12,7 @@ from ...environment import AudioCraftEnvironment
 def explorer(launcher):
     partitions = AudioCraftEnvironment.get_slurm_partitions(['team', 'global'])
     launcher.slurm_(gpus=8, partition=partitions)
-    launcher.bind_(solver='musicgen/musicgen_base_32khz')
+    launcher.bind_(solver='musicgen/musicgen_base_32khz_chuki')
     # replace this by the desired music dataset
     launcher.bind_(dset='internal/chuki')
 
@@ -31,7 +31,7 @@ def explorer(launcher):
     with launcher.job_array():
         sub = launcher.bind()
         sub(medium, adam)
-
+'''
     launcher.slurm_(gpus=32).bind_(label='32gpus')
     with launcher.job_array():
         sub = launcher.bind()
@@ -46,3 +46,4 @@ def explorer(launcher):
     with launcher.job_array():
         sub = launcher.bind()
         sub(large, cfg_low, wd_low, adam, {'optim.max_norm': 3})
+        '''

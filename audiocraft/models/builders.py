@@ -28,6 +28,7 @@ from ..modules.codebooks_patterns import (
 from ..modules.conditioners import (
     BaseConditioner,
     ChromaStemConditioner,
+    ChromaChordConditioner,
     CLAPEmbeddingConditioner,
     ConditionFuser,
     ConditioningProvider,
@@ -139,6 +140,13 @@ def get_conditioner_provider(output_dim: int, cfg: omegaconf.DictConfig) -> Cond
             conditioners[str(cond)] = LUTConditioner(output_dim=output_dim, **model_args)
         elif model_type == 'chroma_stem':
             conditioners[str(cond)] = ChromaStemConditioner(
+                output_dim=output_dim,
+                duration=duration,
+                device=device,
+                **model_args
+            )
+        elif model_type == 'chroma_chord':
+            conditioners[str(cond)] = ChromaChordConditioner(
                 output_dim=output_dim,
                 duration=duration,
                 device=device,

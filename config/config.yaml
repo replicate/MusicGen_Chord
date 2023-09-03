@@ -45,7 +45,7 @@ wandb:
 
 # SLURM launcher configuration.
 slurm:
-  gpus: 4  # convenience parameter, number of GPUs to use.
+  gpus: 8  # convenience parameter, number of GPUs to use.
   mem_per_gpu: 40  # in GB, total mem is automatically scaled with `gpus`.
   time: 3600
   constraint:
