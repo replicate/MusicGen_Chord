@@ -694,7 +694,7 @@ class ChromaStemConditioner(WaveformConditioner):
             paths = [Path(p) for p in x.path if p is not None]
             self.cache.populate_embed_cache(paths, x)
         return x
-
+    
 class ChromaChordConditioner(ChromaStemConditioner):
     """Chord Chroma conditioner based on stems.
     The ChromaChordConditioner uses DEMUCS to first filter out drums and bass, as
@@ -869,15 +869,6 @@ class ChromaChordConditioner(ChromaStemConditioner):
                 logger.debug(f"Chroma was repeated to match length! ({T} -> {chroma.shape[1]})")
 
         return chroma
-
-    def tokenize(self, x: WavCondition) -> WavCondition:
-        """Apply WavConditioner tokenization and populate cache if needed."""
-        x = super().tokenize(x)
-        no_undefined_paths = all(p is not None for p in x.path)
-        if self.cache is not None and no_undefined_paths:
-            paths = [Path(p) for p in x.path if p is not None]
-            self.cache.populate_embed_cache(paths, x)
-        return x
 
     def forward(self, x: WavCondition) -> ConditionType:
         """Extract condition embedding and mask from a waveform and its metadata.

@@ -19,12 +19,12 @@ parser.add_argument('--audio_dir', type=str, default='./test')
 parser.add_argument('--save_dir', type=str, default='./test')
 args = parser.parse_args()
 
-config = HParams.load("./run_config.yaml")
+config = HParams.load("/home/sake/musicgen/MusicGen_Chord/audiocraft/modules/btc/run_config.yaml")
 
 if args.voca is True:
     config.feature['large_voca'] = True
     config.model['num_chords'] = 170
-    model_file = './test/btc_model_large_voca.pt'
+    model_file = '/home/sake/musicgen/MusicGen_Chord/audiocraft/modules/btc/test/btc_model_large_voca.pt'
     idx_to_chord = idx2voca_chord()
     logger.info("label type: large voca")
 else:

@@ -29,6 +29,7 @@ from ..utils.utils import get_dataset_from_loader, is_jsonable, warn_once
 
 from ..models import MusicGen
 
+import gc
 
 class MusicGenChordSolver(base.StandardSolver):
     """Solver for MusicGen training task.
@@ -139,7 +140,7 @@ class MusicGenChordSolver(base.StandardSolver):
         # instantiate LM model
         self.model: models.LMModel = models.builders.get_lm_model(self.cfg).to(self.device)
 
-        # '''
+        '''
         # Change existing ChromaStemConditioner to ChromaChordConditioner and migrate params
         
         mgmodel = MusicGen.get_pretrained('facebook/musicgen-melody')
@@ -155,20 +156,24 @@ class MusicGenChordSolver(base.StandardSolver):
         self.model.load_state_dict(mgmodel.lm.state_dict())
         
         print('assigned params!!')
-        # '''
+        del mgmodel, chordprovider, output_proj_weight
+        gc.collect()
+
+        '''
         if self.cfg.fsdp.use:
             assert not self.cfg.autocast, "Cannot use autocast with fsdp"
             self.model = self.wrap_with_fsdp(self.model)
 
-        # '''
+        '''
         #Freezing weights except ChromaChordConditioner.output_proj
         for param in self.model.parameters():
             param.requires_grad = False
 
         self.model.condition_provider.conditioners.self_wav.output_proj.weight.requires_grad = True
         self.model.condition_provider.conditioners.self_wav.output_proj.bias.requires_grad = True
-        # '''
-
+        '''
+        print("cfg", self.model.cfg_dropout.p)
+        print("att", self.model.att_dropout.p)
 
         self.register_ema('model')
         # initialize optimization
@@ -284,6 +289,7 @@ class MusicGenChordSolver(base.StandardSolver):
                 f" and in metadata ({len(infos)})"
             )
         else:
+            print("!@!!#!!")
             audio = None
             # In that case the batch will be a tuple coming from the _cached_batch_writer bit below.
             infos, = batch  # type: ignore
@@ -312,6 +318,7 @@ class MusicGenChordSolver(base.StandardSolver):
         attributes = [info.to_condition_attributes() for info in infos]
         attributes = self.model.cfg_dropout(attributes)
         attributes = self.model.att_dropout(attributes)
+        print(attributes)
         tokenized = self.model.condition_provider.tokenize(attributes)
 
         # Now we should be synchronization free.

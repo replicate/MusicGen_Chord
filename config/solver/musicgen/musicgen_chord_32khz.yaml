@@ -32,7 +32,7 @@ deadlock:
 
 dataset:
   num_workers: 8
-  batch_size: 32  # 32 GPUs
+  batch_size: 8  # 32 GPUs
   sample_on_weight: false  # Uniform sampling all the way
   sample_on_duration: false  # Uniform sampling all the way
   valid:
@@ -65,7 +65,7 @@ generate:
     top_p: 0.0
 
 optim:
-  epochs: 5000
+  epochs: 1
   optimizer: dadam
   lr: 0.0000001
   # updates_per_epoch: 500 # What is this ?

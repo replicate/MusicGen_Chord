@@ -31,29 +31,21 @@ deadlock:
   use: true  # deadlock detection
 
 dataset:
-  num_workers: 8
-  batch_size: 40  # 32 GPUs
+  num_workers: 1
+  batch_size: 8  # 32 GPUs
   sample_on_weight: false  # Uniform sampling all the way
   sample_on_duration: false  # Uniform sampling all the way
   valid:
-    num_samples: 8
+    num_samples: 1
   generate:
-    num_samples: 8
+    num_samples: 1
   segment_duration : 30.04084375
-  train:
-    permutation_on_files : true
 
 
 checkpoint:
   save_every: 50
   save_last: true
   keep_last: 5
-
-cache:
-  path: /mnt/nvme/MSD_INST_vocalless/experiments/audiocraft/caches/chroma_chord
-  write: true
-  write_shard: 0
-  # write_num_shards: 1
 
 generate:
   every: 1
@@ -75,7 +67,7 @@ generate:
     top_p: 0.0
 
 optim:
-  epochs: 10
+  epochs: 1
   optimizer: dadam
   lr: 0.000000001
   # updates_per_epoch: 500 # What is this ?
