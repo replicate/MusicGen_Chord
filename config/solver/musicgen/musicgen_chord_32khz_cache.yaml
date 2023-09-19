@@ -31,8 +31,8 @@ deadlock:
   use: true  # deadlock detection
 
 dataset:
-  num_workers: 1
-  batch_size: 8  # 32 GPUs
+  num_workers: 8
+  batch_size: 32  # 32 GPUs
   sample_on_weight: false  # Uniform sampling all the way
   sample_on_duration: false  # Uniform sampling all the way
   valid:
@@ -40,6 +40,8 @@ dataset:
   generate:
     num_samples: 1
   segment_duration : 30.04084375
+  train:
+    permutation_on_files: true
 
 
 checkpoint:
@@ -67,7 +69,7 @@ generate:
     top_p: 0.0
 
 optim:
-  epochs: 1
+  epochs: 10
   optimizer: dadam
   lr: 0.000000001
   # updates_per_epoch: 500 # What is this ?

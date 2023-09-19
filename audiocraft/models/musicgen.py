@@ -19,7 +19,7 @@ from .lm import LMModel
 from .builders import get_debug_compression_model, get_debug_lm_model
 from .loaders import load_compression_model, load_lm_model
 from ..data.audio_utils import convert_audio
-from ..modules.conditioners import ConditioningAttributes, WavCondition
+from ..modules.conditioners import ConditioningAttributes, WavCondition, WavChordTextCondition
 from ..utils.autocast import TorchAutocast
 
 
@@ -253,12 +253,38 @@ class MusicGen:
             return self.generate_audio(tokens), tokens
         return self.generate_audio(tokens)
 
+    def generate_with_text_chroma(self, descriptions: tp.List[str], chord_texts: tp.Union[tp.List[str],str],
+                             progress: bool = False, bpm: tp.Union[int,float] = 120, in_triple: bool = False,
+                             return_tokens: bool = False) -> tp.Union[torch.Tensor,
+                                                                      tp.Tuple[torch.Tensor, torch.Tensor]]:
+        """Generate samples conditioned on text and melody.
+
+        Args:
+            descriptions (list of str): A list of strings used as text conditioning.
+            melody_wavs: (torch.Tensor or list of Tensor): A batch of waveforms used as
+                melody conditioning. Should have shape [B, C, T] with B matching the description length,
+                C=1 or 2. It can be [C, T] if there is a single description. It can also be
+                a list of [C, T] tensors.
+            melody_sample_rate: (int): Sample rate of the melody waveforms.
+            progress (bool, optional): Flag to display progress of the generation process. Defaults to False.
+        """
+        if isinstance(chord_texts, str):
+            chord_texts = [chord_texts]
+
+        attributes, prompt_tokens = self._prepare_tokens_and_attributes(descriptions=descriptions, prompt=None,
+                                                                        melody_wavs=chord_texts, bpm=bpm, meter=3+(not in_triple))
+        assert prompt_tokens is None
+        tokens = self._generate_tokens(attributes, prompt_tokens, progress)
+        if return_tokens:
+            return self.generate_audio(tokens), tokens
+        return self.generate_audio(tokens)
+    
     @torch.no_grad()
     def _prepare_tokens_and_attributes(
             self,
             descriptions: tp.Sequence[tp.Optional[str]],
             prompt: tp.Optional[torch.Tensor],
-            melody_wavs: tp.Optional[MelodyList] = None,
+            melody_wavs: tp.Optional[tp.Union[MelodyList,tp.List[str]]] = None, bpm: tp.Optional[tp.Union[float,int]] = None, meter:tp.Optional[int] = None
     ) -> tp.Tuple[tp.List[ConditioningAttributes], tp.Optional[torch.Tensor]]:
         """Prepare model inputs.
 
@@ -293,12 +319,21 @@ class MusicGen:
                         torch.tensor([0], device=self.device),
                         sample_rate=[self.sample_rate],
                         path=[None])
-                else:
+                elif isinstance(melody, torch.Tensor):
                     attr.wav['self_wav'] = WavCondition(
                         melody[None].to(device=self.device),
                         torch.tensor([melody.shape[-1]], device=self.device),
                         sample_rate=[self.sample_rate],
                         path=[None],
+                    )
+                else :
+                    attr.wav['self_wav'] = WavChordTextCondition(
+                        melody,
+                        torch.tensor([0], device=self.device),
+                        sample_rate=[self.sample_rate],
+                        path=[None],
+                        bpm = [bpm],
+                        meter = [meter]
                     )
 
         if prompt is not None:

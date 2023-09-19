@@ -19,7 +19,7 @@ import warnings
 
 class ChordExtractor(nn.Module):
 
-    def __init__(self, device, sample_rate, max_duration, chroma_len, n_chroma):
+    def __init__(self, device, sample_rate, max_duration, chroma_len, n_chroma, winhop):
         super().__init__()
         self.config = HParams.load("/home/sake/musicgen/MusicGen_Chord/audiocraft/modules/btc/run_config.yaml") #gotta specify the path for run_config.yaml of btc
 
@@ -34,7 +34,7 @@ class ChordExtractor(nn.Module):
         self.n_chroma = n_chroma
         self.max_duration = max_duration
         self.chroma_len = chroma_len
-        self.timebin = self.max_duration/self.chroma_len
+        self.timebin = winhop
 
         self.chords = chords.Chords()
         self.device = device
@@ -51,17 +51,17 @@ class ChordExtractor(nn.Module):
         for wav in wavs:
             original_wav = librosa.resample(wav.cpu().numpy(), orig_sr=self.sr, target_sr=sr)
             original_wav = original_wav.squeeze(0)
-            print(original_wav.shape)
+            # print(original_wav.shape)
             T = original_wav.shape[-1]
             # in case we are getting a wav that was dropped out (nullified)
             # from the conditioner, make sure wav length is no less that nfft
-            if T < self.config.feature['hop_length'] * 4:
-                pad = self.config.feature['hop_length'] * 4 - T 
+            if T <  self.timebin//4:
+                pad = self.timebin//4 - T
                 r = 0 if pad % 2 == 0 else 1
                 original_wav = F.pad(torch.Tensor(original_wav), (pad // 2, pad // 2 + r), 'constant', 0)
                 original_wav = original_wav.numpy()
-                assert original_wav.shape[-1] == self.config.feature['hop_length'] * 4, f"expected len {self.config.feature['hop_length'] * 4} but got {original_wav.shape[-1]}"
-            print(original_wav.shape)
+                assert original_wav.shape[-1] == self.timebin//4, f"expected len {self.timebin//4} but got {original_wav.shape[-1]}"
+            # print(original_wav.shape)
             #preprocess
             currunt_sec_hz = 0
 
@@ -74,11 +74,15 @@ class ChordExtractor(nn.Module):
                 else:
                     feature = np.concatenate((feature, tmp), axis=1)
                 currunt_sec_hz = end_idx
-
-            print(original_wav.shape)
-            tmp = librosa.cqt(original_wav[currunt_sec_hz:], sr=sr, n_bins=self.config.feature['n_bins'], bins_per_octave=self.config.feature['bins_per_octave'], hop_length=self.config.feature['hop_length'])
-            feature = np.concatenate((feature, tmp), axis=1)
+            
+            if currunt_sec_hz == 0:
+                feature = librosa.cqt(original_wav[currunt_sec_hz:], sr=sr, n_bins=self.config.feature['n_bins'], bins_per_octave=self.config.feature['bins_per_octave'], hop_length=self.config.feature['hop_length'])
+            else:
+                tmp = librosa.cqt(original_wav[currunt_sec_hz:], sr=sr, n_bins=self.config.feature['n_bins'], bins_per_octave=self.config.feature['bins_per_octave'], hop_length=self.config.feature['hop_length'])
+                feature = np.concatenate((feature, tmp), axis=1)
+            # print(feature.shape)
             feature = np.log(np.abs(feature) + 1e-6)
+            # print(feature)
             feature_per_second = self.config.mp3['inst_len'] / self.config.model['timestep']
             song_length_second = len(original_wav)/self.config.mp3['song_hz']
 
@@ -122,7 +126,7 @@ class ChordExtractor(nn.Module):
 
             count = 0
             for line in lines:
-                if count >= 235: 
+                if count >= self.chroma_len: 
                     break
                 splits = line.split()
                 if len(splits) == 3:
@@ -139,7 +143,7 @@ class ChordExtractor(nn.Module):
                 start_bin = round(float(s)/self.timebin)
                 end_bin = round(float(e)/self.timebin)
                 for j in range(start_bin,end_bin):
-                    if count >= 235: 
+                    if count >= self.chroma_len: 
                         break
                     chroma[j]=multihot
                     count += 1

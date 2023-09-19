@@ -18,20 +18,16 @@ from . import base, builders
 from .compression import CompressionSolver
 from .. import metrics as eval_metrics
 from .. import models
-from ..optim import fsdp
 from ..data.audio_dataset import AudioDataset
 from ..data.music_dataset import MusicDataset, MusicInfo, AudioInfo
 from ..data.audio_utils import normalize_audio
-from ..modules.conditioners import JointEmbedCondition, SegmentWithAttributes, WavCondition, ChromaChordConditioner
+from ..modules.conditioners import JointEmbedCondition, SegmentWithAttributes, WavCondition
 from ..utils.cache import CachedBatchWriter, CachedBatchLoader
 from ..utils.samples.manager import SampleManager
 from ..utils.utils import get_dataset_from_loader, is_jsonable, warn_once
 
-from ..models import MusicGen
 
-import gc
-
-class MusicGenChordSolver(base.StandardSolver):
+class MusicGenMelodyTestSolver(base.StandardSolver):
     """Solver for MusicGen training task.
 
     Used in: https://arxiv.org/abs/2306.05284
@@ -112,7 +108,7 @@ class MusicGenChordSolver(base.StandardSolver):
     @property
     def best_metric_name(self) -> tp.Optional[str]:
         return self._best_metric_name
-    
+
     def build_model(self) -> None:
         """Instantiate models and optimizer."""
         # we can potentially not use all quantizers with which the EnCodec model was trained
@@ -140,35 +136,22 @@ class MusicGenChordSolver(base.StandardSolver):
         # instantiate LM model
         self.model: models.LMModel = models.builders.get_lm_model(self.cfg).to(self.device)
 
-        # '''
-        # Change existing ChromaStemConditioner to ChromaChordConditioner and migrate params
-        
-        mgmodel = MusicGen.get_pretrained('facebook/musicgen-melody')
-        mgmodel.set_generation_params(duration=30)
+       
 
-        chordprovider = mgmodel.lm.condition_provider.conditioners.self_wav
-        output_proj_weight = chordprovider.output_proj.state_dict() #not loaded yet?
-
-        mgmodel.lm.condition_provider.conditioners.self_wav = ChromaChordConditioner(chordprovider.output_dim, chordprovider.sample_rate, chordprovider.chroma.n_chroma, int(math.log2(chordprovider.chroma.winlen)), chordprovider.duration, device='cuda')
-        mgmodel.lm.condition_provider.conditioners.self_wav.output_proj.load_state_dict(output_proj_weight) 
-
-        print('assignin mgmodel.lm params to LMModel !!!')
-        self.model.load_state_dict(mgmodel.lm.state_dict())
-        
-        print('assigned params!!')
-        del mgmodel, chordprovider, output_proj_weight
-        gc.collect()
-
-
-        for param in self.model.parameters():
-            param.requires_grad = True
-
-        # '''
         if self.cfg.fsdp.use:
             assert not self.cfg.autocast, "Cannot use autocast with fsdp"
             self.model = self.wrap_with_fsdp(self.model)
 
+        # for name, param in self.model.named_parameters():
+            # print(name)
 
+         # '''
+        #Freezing weights except ChromaChordConditioner.output_proj
+        for param in self.model.parameters():
+            param.requires_grad = False
+
+        self.model._fsdp_wrapped_module.condition_provider._fsdp_wrapped_module.conditioners.self_wav.output_proj.weight.requires_grad = True
+        self.model._fsdp_wrapped_module.condition_provider._fsdp_wrapped_module.conditioners.self_wav.output_proj.bias.requires_grad = True
         # self.model.condition_provider.conditioners.self_wav.output_proj.weight.requires_grad = True
         # self.model.condition_provider.conditioners.self_wav.output_proj.bias.requires_grad = True
         # '''
@@ -374,9 +357,6 @@ class MusicGenChordSolver(base.StandardSolver):
         if check_synchronization_points:
             torch.cuda.set_sync_debug_mode('warn')
 
-        # print(torch.any(torch.isnan(audio_tokens)))
-        # print(torch.any(torch.isnan(condition_tensors['description'][0])))
-        # print(torch.any(torch.isnan(condition_tensors['self_wav'][0])))
         with self.autocast:
             model_output = self.model.compute_predictions(audio_tokens, [], condition_tensors)  # type: ignore
             logits = model_output.logits
@@ -384,7 +364,7 @@ class MusicGenChordSolver(base.StandardSolver):
             ce, ce_per_codebook = self._compute_cross_entropy(logits, audio_tokens, mask)
             loss = ce
         self.deadlock_detect.update('loss')
-        # print("model_output : \n", model_output)
+
         if check_synchronization_points:
             torch.cuda.set_sync_debug_mode('default')
 
@@ -392,7 +372,6 @@ class MusicGenChordSolver(base.StandardSolver):
             metrics['lr'] = self.optimizer.param_groups[0]['lr']
             if self.scaler is not None:
                 loss = self.scaler.scale(loss)
-                print(loss)
             self.deadlock_detect.update('scale')
             if self.cfg.fsdp.use:
                 loss.backward()
@@ -406,9 +385,7 @@ class MusicGenChordSolver(base.StandardSolver):
                 loss.backward()
                 flashy.distrib.sync_model(self.model)
             self.deadlock_detect.update('backward')
-            # print(model_output)
-            # print('\n')
-            # print(loss)
+
             if self.scaler is not None:
                 self.scaler.unscale_(self.optimizer)
             if self.cfg.optim.max_norm:
@@ -588,8 +565,6 @@ class MusicGenChordSolver(base.StandardSolver):
                     **self.generation_params)
                 gen_audio = gen_outputs['gen_audio'].cpu()
                 prompt_audio = gen_outputs['prompt_audio'].cpu()
-                print(gen_audio.shape)
-                print(prompt_audio.shape)
                 sample_manager.add_samples(
                     gen_audio, self.epoch, hydrated_conditions,
                     prompt_wavs=prompt_audio, ground_truth_wavs=audio,

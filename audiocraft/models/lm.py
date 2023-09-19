@@ -292,9 +292,13 @@ class LMModel(StreamingModule):
         sequence_codes, sequence_indexes, sequence_mask = pattern.build_pattern_sequence(
             codes, self.special_token_id, keep_only_valid_steps=True
         )
+        # print(torch.any(torch.isnan(sequence_codes)))
+        # print(torch.any(torch.isnan(sequence_indexes)))        
+        # print(torch.any(torch.isnan(sequence_mask)))
         # apply model on pattern sequence
         model = self if self._fsdp is None else self._fsdp
-        logits = model(sequence_codes, conditions, condition_tensors)  # [B, K, S, card]
+        logits = model(sequence_codes, conditions, condition_tensors)   # [B, K, S, card]
+        # print("logits : \n", torch.any(torch.isnan(logits))) 
         # map back the logits on pattern sequence to logits on original codes: [B, K, S, card] -> [B, K, T, card]
         # and provide the corresponding mask over invalid positions of tokens
         logits = logits.permute(0, 3, 1, 2)  # [B, card, K, S]
@@ -302,6 +306,9 @@ class LMModel(StreamingModule):
         logits, logits_indexes, logits_mask = pattern.revert_pattern_logits(
             logits, float('nan'), keep_only_valid_steps=True
         )
+        # print(torch.any(torch.isnan(logits)))
+        # print(torch.any(torch.isnan(logits_indexes)))        
+        # print(torch.any(torch.isnan(logits_mask)))
         logits = logits.permute(0, 2, 3, 1)  # [B, K, T, card]
         logits_mask = logits_mask[None, :, :].expand(B, -1, -1)  # [K, T] -> [B, K, T]
         return LMOutput(logits, logits_mask)

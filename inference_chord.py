@@ -21,13 +21,22 @@ model.lm.condition_provider.conditioners.self_wav = ChromaChordConditioner(chord
 model.lm.to('cuda')
 # wav = model.generate_unconditional(4)    # generates 4 unconditional audio samples
 
-target_path = Path("/home/sake/chords_gen")
+target_path = Path("/home/sake/chords_text_gen")
 
 # caption_idx = ["tag", "caption_writing", "caption_summary", "caption_paraphrase", "caption_attribute_prediction"]
 
 # rand_idxs = random.sample(range(1, len(df)), 4)
 
-descriptions = ["k pop, girl group, 2022"]
+descriptions = ["happy piano pop song"]
+chord_text = 'C G Amin F'
+bpm = 137
+in_triple = False
+
+for i in range(len(descriptions)):
+    if in_triple:
+        descriptions[i] = descriptions[i] + ", in triple"
+    descriptions[i] = descriptions[i] + f", bpm : {bpm}"
+
 '''
 dfs = []
 paths = []
@@ -48,13 +57,14 @@ for idx in rand_idxs:
 # print(len(descriptions))
 
 path = target_path/descriptions[0]
-for i in tqdm(range(20)): 
+for i in tqdm(range(1)): 
     # print(descriptions)
     # wav = model.generate(descriptions)  # generates 3 samples.
 
     melody, sr = torchaudio.load('/home/sake/psycho_separated_drumless/mdx_extra/mdx_extra/psycho/no_drums.wav')
-    # generates using the melody from the given audio and the provided descriptions.
     wav = model.generate_with_chroma(descriptions, melody[None], sr)
+
+    wav = model.generate_with_text_chroma(descriptions, chord_text, bpm = bpm, in_triple = in_triple)
 
     for idx, one_wav in enumerate(wav):
         # Will save under {idx}.wav, with loudness normalization at -14 db LUFS.

@@ -7,11 +7,18 @@ defaults:
   - musicgen/default
   - /model: lm/musicgen_lm
   - override /conditioner: chroma2music
-  - override /dset: audio/default
+  - override /dset: chord_32khz
   - _self_
 
-autocast: true
-autocast_dtype: float16
+solver: musicgen_melody_test
+
+autocast: false
+# autocast_dtype: float16
+
+fsdp:
+  use: true
+  param_dtype: float32
+  # per_block: false
 
 # EnCodec large trained on mono-channel music audio sampled at 32khz
 # with a total stride of 640 leading to 50 frames/s.
@@ -26,27 +33,51 @@ deadlock:
   use: true  # deadlock detection
 
 dataset:
-  batch_size: 192  # 32 GPUs
+  batch_size: 24  # 32 GPUs
   sample_on_weight: false  # Uniform sampling all the way
   sample_on_duration: false  # Uniform sampling all the way
+  valid:
+    num_samples: 20
+  generate:
+    num_samples: 8
+  train:
+    num_samples: 400000
 
-generate:
+generate:  
+  every: 1
+  num_workers: 8
+  path: samples
+  audio:
+    format: wav
+    strategy: loudness
+    sample_rate: ${sample_rate}
+    loudness_headroom_db: 14
   lm:
+    prompted_samples: false
     use_sampling: true
     top_k: 250
     top_p: 0.0
 
+checkpoint:
+  save_every: 10
+  save_last: true
+  keep_last: 5
+
 optim:
   epochs: 500
-  optimizer: dadam
-  lr: 1
+  updates_per_epoch: 16000
+  optimizer: adamw
+  lr: 0.001
   ema:
     use: true
     updates: 10
     device: cuda
 
 logging:
+  level: INFO
+  log_updates: 8000
   log_tensorboard: true
+  log_wandb: true
 
 schedule:
   lr_scheduler: cosine
@@ -54,3 +85,12 @@ schedule:
     warmup: 4000
     lr_min_ratio: 0.0
     cycle_length: 1.0
+
+tensorboard:
+  with_media_logging: true
+
+wandb:
+  with_media_logging: true
+  project: audiocraft_chord # project name
+  name:  # optional name for the experiment
+  group:  # optional group

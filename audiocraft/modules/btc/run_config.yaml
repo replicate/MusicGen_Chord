@@ -21,8 +21,8 @@ experiment:
 model:
   feature_size : 144
   timestep : 108
-  num_chords : 25
-#  num_chords : 170
+  # num_chords : 25
+  num_chords : 170
   input_dropout : 0.2
   layer_dropout : 0.2
   attention_dropout : 0.2

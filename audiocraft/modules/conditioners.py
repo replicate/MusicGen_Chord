@@ -24,6 +24,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pad_sequence
+import numpy as np
 
 from .chroma import ChromaExtractor
 from .chord_chroma import ChordExtractor
@@ -51,6 +52,14 @@ class WavCondition(tp.NamedTuple):
     path: tp.List[tp.Optional[str]] = []
     seek_time: tp.List[tp.Optional[float]] = []
 
+class WavChordTextCondition(tp.NamedTuple):
+    wav: tp.Union[torch.Tensor,str,tp.List[str]]
+    length: torch.Tensor
+    sample_rate: tp.List[int]
+    path: tp.List[tp.Optional[str]] = []
+    seek_time: tp.List[tp.Optional[float]] = []
+    bpm : tp.List[tp.Optional[tp.Union[int, float]]] = []
+    meter : tp.List[tp.Optional[int]] = []
 
 class JointEmbedCondition(tp.NamedTuple):
     wav: torch.Tensor
@@ -64,7 +73,7 @@ class JointEmbedCondition(tp.NamedTuple):
 @dataclass
 class ConditioningAttributes:
     text: tp.Dict[str, tp.Optional[str]] = field(default_factory=dict)
-    wav: tp.Dict[str, WavCondition] = field(default_factory=dict)
+    wav: tp.Dict[str, tp.Union[WavCondition,WavChordTextCondition]] = field(default_factory=dict)
     joint_embed: tp.Dict[str, JointEmbedCondition] = field(default_factory=dict)
 
     def __getitem__(self, item):
@@ -151,14 +160,25 @@ def nullify_wav(cond: WavCondition) -> WavCondition:
     Returns:
         WavCondition: Nullified wav condition.
     """
-    null_wav, _ = nullify_condition((cond.wav, torch.zeros_like(cond.wav)), dim=cond.wav.dim() - 1)
-    return WavCondition(
-        wav=null_wav,
-        length=torch.tensor([0] * cond.wav.shape[0], device=cond.wav.device),
-        sample_rate=cond.sample_rate,
-        path=[None] * cond.wav.shape[0],
-        seek_time=[None] * cond.wav.shape[0],
-    )
+    if not isinstance(cond, WavChordTextCondition):
+        null_wav, _ = nullify_condition((cond.wav, torch.zeros_like(cond.wav)), dim=cond.wav.dim() - 1)
+        return WavCondition(
+            wav=null_wav,
+            length=torch.tensor([0] * cond.wav.shape[0], device=cond.wav.device),
+            sample_rate=cond.sample_rate,
+            path=[None] * cond.wav.shape[0],
+            seek_time=[None] * cond.wav.shape[0],
+        )
+    else:
+        return WavChordTextCondition(
+            wav='N',
+            length=cond.length,
+            sample_rate=cond.sample_rate,
+            path=[None],
+            seek_time=[None],
+            bpm = cond.bpm,
+            meter = cond.meter,
+        )
 
 
 def nullify_joint_embed(embed: JointEmbedCondition) -> JointEmbedCondition:
@@ -672,7 +692,7 @@ class ChromaStemConditioner(WaveformConditioner):
         else:
             assert all(sr == x.sample_rate[0] for sr in x.sample_rate), "All sample rates in batch should be equal."
             chroma = self._compute_wav_embedding(x.wav, x.sample_rate[0])
-
+    
         if self.match_len_on_eval:
             B, T, C = chroma.shape
             if T > self.chroma_len:
@@ -733,9 +753,11 @@ class ChromaChordConditioner(ChromaStemConditioner):
         stem_sources: list = self.demucs.sources 
         self.stem_indices = torch.LongTensor([stem_sources.index('bass'), stem_sources.index('other')]).to(device)        
         self.chroma_len = self._get_chroma_len()
+        self.bar2chromabin = self.sample_rate / self.winhop
 
-        self.chroma = ChordExtractor(device = device, sample_rate=sample_rate, n_chroma=n_chroma, max_duration = duration, chroma_len = self.chroma_len).to(device)
-        
+        self.chroma = ChordExtractor(device = device, sample_rate=sample_rate, n_chroma=n_chroma, max_duration = duration, chroma_len = self.chroma_len, winhop = self.winhop).to(device)
+        self.chords = chords.Chords()
+
     def _downsampling_factor(self) -> int:
         return self.winhop
 
@@ -836,26 +858,57 @@ class ChromaChordConditioner(ChromaStemConditioner):
         return out.to(self.device)
 
     @torch.no_grad()
-    def _get_wav_embedding(self, x: WavCondition) -> torch.Tensor:
+    def _get_wav_embedding(self, x: tp.Union[WavCondition, WavChordTextCondition]) -> torch.Tensor:
         """Get the wav embedding from the WavCondition.
         The conditioner will either extract the embedding on-the-fly computing it from the condition wav directly
         or will rely on the embedding cache to load the pre-computed embedding if relevant.
         """
-        sampled_wav: tp.Optional[torch.Tensor] = None
-        if not self.training and self.eval_wavs is not None:
-            warn_once(logger, "Using precomputed evaluation wavs!")
-            sampled_wav = self._sample_eval_wavs(len(x.wav))
+        if isinstance(x, WavCondition):
+            sampled_wav: tp.Optional[torch.Tensor] = None
+            if not self.training and self.eval_wavs is not None:
+                warn_once(logger, "Using precomputed evaluation wavs!")
+                sampled_wav = self._sample_eval_wavs(len(x.wav))
 
-        no_undefined_paths = all(p is not None for p in x.path)
-        no_nullified_cond = x.wav.shape[-1] > 1
-        if sampled_wav is not None:
-            chroma = self._compute_wav_embedding(sampled_wav, self.sample_rate)
-        elif self.cache is not None and no_undefined_paths and no_nullified_cond:
-            paths = [Path(p) for p in x.path if p is not None]
-            chroma = self.cache.get_embed_from_cache(paths, x)
+            no_undefined_paths = all(p is not None for p in x.path)
+            no_nullified_cond = x.wav.shape[-1] > 1
+            if sampled_wav is not None:
+                chroma = self._compute_wav_embedding(sampled_wav, self.sample_rate)
+            elif self.cache is not None and no_undefined_paths and no_nullified_cond:
+                paths = [Path(p) for p in x.path if p is not None]
+                chroma = self.cache.get_embed_from_cache(paths, x)
+            else:
+                assert all(sr == x.sample_rate[0] for sr in x.sample_rate), "All sample rates in batch should be equal."
+                chroma = self._compute_wav_embedding(x.wav, x.sample_rate[0])
         else:
-            assert all(sr == x.sample_rate[0] for sr in x.sample_rate), "All sample rates in batch should be equal."
-            chroma = self._compute_wav_embedding(x.wav, x.sample_rate[0])
+            chromas = []
+            for wav, bpm, meter in zip(x.wav, x.bpm, x.meter):
+                chroma = torch.zeros([self.chroma_len, self.dim])
+                count = 0
+                offset = 0
+                stext = wav.split(" ")
+                barsec = 60/(bpm/meter)
+                timebin = barsec * self.bar2chromabin
+
+                while count < self.chroma_len:
+                    for tokens in stext:
+                        if count >= self.chroma_len: 
+                            break
+                        stoken = tokens.split(',')
+                        for token in stoken:
+                            off_timebin = timebin + offset
+                            rounded_timebin = round(off_timebin)
+                            offset = off_timebin - rounded_timebin
+                            offset = offset/len(stoken)
+                            add_step = rounded_timebin//len(stoken)
+                            mhot = self.chords.chord(token)
+                            rolled = np.roll(mhot[2], mhot[0])
+                            for i in range(count, count + add_step):
+                                if count >= self.chroma_len: 
+                                    break
+                                chroma[i] = torch.Tensor(rolled)
+                                count += 1
+                chromas.append(chroma)
+            chroma = torch.stack(chromas)
 
         if self.match_len_on_eval:
             B, T, C = chroma.shape
@@ -870,6 +923,15 @@ class ChromaChordConditioner(ChromaStemConditioner):
 
         return chroma
 
+    def tokenize(self, x: tp.Union[WavCondition, WavChordTextCondition]) -> tp.Union[WavCondition, WavChordTextCondition]:
+        if isinstance(x, WavCondition):
+            wav, length, sample_rate, path, seek_time = x
+            assert length is not None
+            return WavCondition(wav.to(self.device), length.to(self.device), sample_rate, path, seek_time)
+        else:
+            wav, length, sample_rate, path, seek_time, bpm, meter = x
+            return WavChordTextCondition(wav, length.to(self.device), sample_rate, path, seek_time, bpm, meter)
+    
     def forward(self, x: WavCondition) -> ConditionType:
         """Extract condition embedding and mask from a waveform and its metadata.
         Args:
@@ -1419,7 +1481,7 @@ class ConditioningProvider(nn.Module):
                 out[condition].append(text[condition])
         return out
 
-    def _collate_wavs(self, samples: tp.List[ConditioningAttributes]) -> tp.Dict[str, WavCondition]:
+    def _collate_wavs(self, samples: tp.List[ConditioningAttributes]) -> tp.Dict[str, tp.Union[WavCondition, WavChordTextCondition]]:
         """Generate a dict where the keys are attributes by which we fetch similar wavs,
         and the values are Tensors of wavs according to said attributes.
 
@@ -1439,16 +1501,24 @@ class ConditioningProvider(nn.Module):
         sample_rates = defaultdict(list)
         paths = defaultdict(list)
         seek_times = defaultdict(list)
+        bpms = defaultdict(list)
+        meters = defaultdict(list)
         out: tp.Dict[str, WavCondition] = {}
 
         for sample in samples:
             for attribute in self.wav_conditions:
-                wav, length, sample_rate, path, seek_time = sample.wav[attribute]
-                assert wav.dim() == 3, f"Got wav with dim={wav.dim()}, but expected 3 [1, C, T]"
-                assert wav.size(0) == 1, f"Got wav [B, C, T] with shape={wav.shape}, but expected B == 1"
-                # mono-channel conditioning
-                wav = wav.mean(1, keepdim=True)  # [1, 1, T]
-                wavs[attribute].append(wav.flatten())  # [T]
+                if isinstance(sample.wav[attribute], WavCondition):
+                    wav, length, sample_rate, path, seek_time = sample.wav[attribute]
+                    assert wav.dim() == 3, f"Got wav with dim={wav.dim()}, but expected 3 [1, C, T]"
+                    assert wav.size(0) == 1, f"Got wav [B, C, T] with shape={wav.shape}, but expected B == 1"
+                    # mono-channel conditioning
+                    wav = wav.mean(1, keepdim=True)  # [1, 1, T]
+                    wavs[attribute].append(wav.flatten())  # [T]
+                else:
+                    wav, length, sample_rate, path, seek_time, bpm, meter = sample.wav[attribute]
+                    wavs[attribute].append(wav)
+                    bpms[attribute].append(bpm[0])
+                    meters[attribute].append(meter[0])
                 lengths[attribute].append(length)
                 sample_rates[attribute].extend(sample_rate)
                 paths[attribute].extend(path)
@@ -1456,11 +1526,15 @@ class ConditioningProvider(nn.Module):
 
         # stack all wavs to a single tensor
         for attribute in self.wav_conditions:
-            stacked_wav, _ = collate(wavs[attribute], dim=0)
-            out[attribute] = WavCondition(
-                stacked_wav.unsqueeze(1), torch.cat(lengths[attribute]), sample_rates[attribute],
-                paths[attribute], seek_times[attribute])
-
+            if isinstance(wavs[attribute][0], torch.Tensor):
+                stacked_wav, _ = collate(wavs[attribute], dim=0)
+                out[attribute] = WavCondition(
+                    stacked_wav.unsqueeze(1), torch.cat(lengths[attribute]), sample_rates[attribute],
+                    paths[attribute], seek_times[attribute])
+            else:
+                out[attribute] = WavChordTextCondition(
+                    wavs[attribute], torch.cat(lengths[attribute]), sample_rates[attribute],
+                    paths[attribute], seek_times[attribute], bpms[attribute], meters[attribute])
         return out
 
     def _collate_joint_embeds(self, samples: tp.List[ConditioningAttributes]) -> tp.Dict[str, JointEmbedCondition]:

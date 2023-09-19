@@ -17,6 +17,7 @@ autocast: false
 
 fsdp:
   use: true
+  param_dtype: float32
 
 # EnCodec large trained on mono-channel music audio sampled at 32khz
 # with a total stride of 640 leading to 50 frames/s.
@@ -32,16 +33,18 @@ deadlock:
 
 dataset:
   num_workers: 8
-  batch_size: 8  # 32 GPUs
+  batch_size: 24  # 8gpu
   sample_on_weight: false  # Uniform sampling all the way
   sample_on_duration: false  # Uniform sampling all the way
   valid:
-    num_samples: 8
+    num_samples: 20
   generate:
     num_samples: 8
+  train:
+    num_samples: 400000
 
 checkpoint:
-  save_every: 50
+  save_every: 10
   save_last: true
   keep_last: 5
 
@@ -55,20 +58,24 @@ generate:
     sample_rate: ${sample_rate}
     loudness_headroom_db: 14
   lm:
-    prompted_samples: true
-    unprompted_samples: true
-    prompt_duration: 0
+    prompted_samples: false
+    # unprompted_samples: true
+    # prompt_duration: 5 # Can't be 0 
     gen_duration: 30
     use_sampling: true
-    temp: 1.0
+    # temp: 1.0
     top_k: 250
     top_p: 0.0
 
+evaluate:
+  every: 1
+
 optim:
-  epochs: 1
-  optimizer: dadam
-  lr: 0.0000001
-  # updates_per_epoch: 500 # What is this ?
+  epochs: 10000
+  optimizer: adamw
+  # optimizer: dadam
+  lr: 0.0001
+  updates_per_epoch: 1000
   ema:
     use: true
     updates: 10
@@ -78,10 +85,21 @@ logging:
   level: INFO
   log_updates: 100
   log_tensorboard: true
+  log_wandb: true
 
 schedule:
   lr_scheduler: cosine
   cosine:
-    warmup: 0
+    warmup: 4000
     lr_min_ratio: 0.0
     cycle_length: 1.0
+
+tensorboard:
+  with_media_logging: true
+
+wandb:
+  with_media_logging: true
+  entity: sakemin
+  project: audiocraft_chord # project name
+  name:  # optional name for the experiment
+  group:  # optional group

@@ -30,7 +30,7 @@ conditioners:
       match_len_on_eval: false
       eval_wavs: null
       n_eval_wavs: 100
-      cache_path: null
+      cache_path:  /mnt/nvme/MSD_INST_vocalless/experiments/audiocraft/caches/chroma_melody
   description:
     model: t5
     t5:
