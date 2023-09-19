@@ -25,6 +25,7 @@ librosa = "*"
 gradio = "*"
 torchmetrics = "*"
 encodec = "*"
+pretty-midi = "*"
 
 [dev-packages]
 
