@@ -140,7 +140,7 @@ class MusicGenChordSolver(base.StandardSolver):
         # instantiate LM model
         self.model: models.LMModel = models.builders.get_lm_model(self.cfg).to(self.device)
 
-        # '''
+        '''
         # Change existing ChromaStemConditioner to ChromaChordConditioner and migrate params
         
         mgmodel = MusicGen.get_pretrained('facebook/musicgen-melody')
@@ -163,7 +163,7 @@ class MusicGenChordSolver(base.StandardSolver):
         for param in self.model.parameters():
             param.requires_grad = True
 
-        # '''
+        '''
         if self.cfg.fsdp.use:
             assert not self.cfg.autocast, "Cannot use autocast with fsdp"
             self.model = self.wrap_with_fsdp(self.model)
