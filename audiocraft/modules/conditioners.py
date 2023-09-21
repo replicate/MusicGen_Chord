@@ -151,7 +151,7 @@ def nullify_condition(condition: ConditionType, dim: int = 1):
     return out, mask
 
 
-def nullify_wav(cond: WavCondition) -> WavCondition:
+def nullify_wav(cond: tp.Union[WavCondition,WavChordTextCondition]) -> tp.Union[WavCondition,WavChordTextCondition]:
     """Transform a WavCondition to a nullified WavCondition.
     It replaces the wav by a null tensor, forces its length to 0, and replaces metadata by dummy attributes.
 
@@ -758,6 +758,16 @@ class ChromaChordConditioner(ChromaStemConditioner):
         self.chroma = ChordExtractor(device = device, sample_rate=sample_rate, n_chroma=n_chroma, max_duration = duration, chroma_len = self.chroma_len, winhop = self.winhop).to(device)
         self.chords = chords.Chords()
 
+        #3 Layered MLP projection override
+        self.output_proj = nn.Sequential(
+            nn.Linear(n_chroma, output_dim),
+            nn.ReLU(inplace = True),
+            nn.Linear(output_dim, output_dim),
+            nn.ReLU(inplace = True),
+            nn.Linear(output_dim, output_dim)
+        )
+
+
     def _downsampling_factor(self) -> int:
         return self.winhop
 
@@ -942,7 +952,8 @@ class ChromaChordConditioner(ChromaStemConditioner):
         wav, lengths, *_ = x
         with torch.no_grad():
             embeds = self._get_wav_embedding(x)
-        embeds = embeds.to(self.output_proj.weight)
+        # embeds = embeds.to(self.output_proj.weight)
+        embeds = embeds.to(self.output_proj[0].weight) #For MLP projection nn.Sequential
         embeds = self.output_proj(embeds)
 
         if lengths is not None:

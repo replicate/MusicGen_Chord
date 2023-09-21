@@ -140,7 +140,7 @@ class MusicGenChordSolver(base.StandardSolver):
         # instantiate LM model
         self.model: models.LMModel = models.builders.get_lm_model(self.cfg).to(self.device)
 
-        '''
+        # '''
         # Change existing ChromaStemConditioner to ChromaChordConditioner and migrate params
         
         mgmodel = MusicGen.get_pretrained('facebook/musicgen-melody')
@@ -150,7 +150,8 @@ class MusicGenChordSolver(base.StandardSolver):
         output_proj_weight = chordprovider.output_proj.state_dict() #not loaded yet?
 
         mgmodel.lm.condition_provider.conditioners.self_wav = ChromaChordConditioner(chordprovider.output_dim, chordprovider.sample_rate, chordprovider.chroma.n_chroma, int(math.log2(chordprovider.chroma.winlen)), chordprovider.duration, device='cuda')
-        mgmodel.lm.condition_provider.conditioners.self_wav.output_proj.load_state_dict(output_proj_weight) 
+        mgmodel.lm.condition_provider.conditioners.self_wav.output_proj[0].load_state_dict(output_proj_weight) #For MLP projection
+        #mgmodel.lm.condition_provider.conditioners.self_wav.output_proj.load_state_dict(output_proj_weight) 
 
         print('assignin mgmodel.lm params to LMModel !!!')
         self.model.load_state_dict(mgmodel.lm.state_dict())
@@ -163,7 +164,7 @@ class MusicGenChordSolver(base.StandardSolver):
         for param in self.model.parameters():
             param.requires_grad = True
 
-        '''
+        # '''
         if self.cfg.fsdp.use:
             assert not self.cfg.autocast, "Cannot use autocast with fsdp"
             self.model = self.wrap_with_fsdp(self.model)
@@ -175,7 +176,7 @@ class MusicGenChordSolver(base.StandardSolver):
 
         self.register_ema('model')
         # initialize optimization
-        self.optimizer = builders.get_optimizer(builders.get_optim_parameter_groups(self.model), self.cfg.optim)
+        self.optimizer = builders.get_optimizer(builders.get_optim_parameter_groups(self.model.condition_provider.conditioners.self_wav.output_proj), self.cfg.optim)
         self.lr_scheduler = builders.get_lr_scheduler(self.optimizer, self.cfg.schedule, self.total_updates)
         self.register_stateful('compression_model', 'model', 'optimizer', 'lr_scheduler')
         self.register_best_state('model')
