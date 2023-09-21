@@ -151,7 +151,7 @@ def nullify_condition(condition: ConditionType, dim: int = 1):
     return out, mask
 
 
-def nullify_wav(cond: WavCondition) -> WavCondition:
+def nullify_wav(cond: tp.Union[WavCondition,WavChordTextCondition]) -> tp.Union[WavCondition,WavChordTextCondition]:
     """Transform a WavCondition to a nullified WavCondition.
     It replaces the wav by a null tensor, forces its length to 0, and replaces metadata by dummy attributes.
 
@@ -888,7 +888,6 @@ class ChromaChordConditioner(ChromaStemConditioner):
                 stext = wav.split(" ")
                 barsec = 60/(bpm/meter)
                 timebin = barsec * self.bar2chromabin
-
                 while count < self.chroma_len:
                     for tokens in stext:
                         if count >= self.chroma_len: 
