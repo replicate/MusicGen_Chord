@@ -74,8 +74,8 @@ optim:
   epochs: 10000
   optimizer: adamw
   # optimizer: dadam
-  lr: 0.0001
-  updates_per_epoch: 1000
+  lr: 1e-4
+  updates_per_epoch: 100
   ema:
     use: true
     updates: 10
@@ -83,15 +83,15 @@ optim:
 
 logging:
   level: INFO
-  log_updates: 100
+  log_updates: 50
   log_tensorboard: true
   log_wandb: true
 
 schedule:
   lr_scheduler: cosine
   cosine:
-    warmup: 200
-    lr_min_ratio: 1e-7
+    warmup: 4000
+    lr_min_ratio: 0.0
     cycle_length: 1.0
 
 tensorboard:
@@ -100,6 +100,6 @@ tensorboard:
 wandb:
   with_media_logging: true
   entity: sakemin
-  project: audiocraft_chord_single_layered_8gpu # project name
-  name:  single-layered-projection-8gpu # optional name for the experiment
+  project: audiocraft_chord # project name
+  name:  # optional name for the experiment
   group:  # optional group

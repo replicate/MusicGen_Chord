@@ -150,8 +150,9 @@ class MusicGenChordSolver(base.StandardSolver):
         output_proj_weight = chordprovider.output_proj.state_dict() #not loaded yet?
 
         mgmodel.lm.condition_provider.conditioners.self_wav = ChromaChordConditioner(chordprovider.output_dim, chordprovider.sample_rate, chordprovider.chroma.n_chroma, int(math.log2(chordprovider.chroma.winlen)), chordprovider.duration, device='cuda')
-        mgmodel.lm.condition_provider.conditioners.self_wav.output_proj[0].load_state_dict(output_proj_weight) #For MLP projection
-        #mgmodel.lm.condition_provider.conditioners.self_wav.output_proj.load_state_dict(output_proj_weight) 
+        
+        # mgmodel.lm.condition_provider.conditioners.self_wav.output_proj[0].load_state_dict(output_proj_weight) #For MLP projection
+        mgmodel.lm.condition_provider.conditioners.self_wav.output_proj.load_state_dict(output_proj_weight) 
 
         print('assignin mgmodel.lm params to LMModel !!!')
         self.model.load_state_dict(mgmodel.lm.state_dict())
@@ -161,22 +162,48 @@ class MusicGenChordSolver(base.StandardSolver):
         gc.collect()
 
 
-        for param in self.model.parameters():
+        for name, param in self.model.named_parameters():
             param.requires_grad = True
+            # if not param.retain_grad:
+            #     print("!retain_grad", name)
+            # if not param.is_leaf:
+            #     print("!is_leaf", name)
+
+
+        # self.model.condition_provider.conditioners.self_wav.output_proj.weight.requires_grad = True
+        # self.model.condition_provider.conditioners.self_wav.output_proj.bias.requires_grad = True
+
+
+        for name, param in self.model.condition_provider.conditioners.self_wav.output_proj.named_parameters():
+            print(name, param.requires_grad, param.retain_grad)
+            print(param)
+
 
         # '''
         if self.cfg.fsdp.use:
             assert not self.cfg.autocast, "Cannot use autocast with fsdp"
             self.model = self.wrap_with_fsdp(self.model)
-
-
-        # self.model.condition_provider.conditioners.self_wav.output_proj.weight.requires_grad = True
-        # self.model.condition_provider.conditioners.self_wav.output_proj.bias.requires_grad = True
         # '''
 
+
+
         self.register_ema('model')
+
         # initialize optimization
-        self.optimizer = builders.get_optimizer(builders.get_optim_parameter_groups(self.model.condition_provider.conditioners.self_wav.output_proj), self.cfg.optim)
+
+        # Manually instancing the optimizer only assigning output.proj
+        '''
+        if self.cfg.optim.optimizer == 'adam':
+            self.optimizer = torch.optim.Adam(self.model.condition_provider.conditioners.self_wav.output_proj.parameters(), lr=self.cfg.optim.lr, **self.cfg.optim.adam)
+        elif self.cfg.optim.optimizer == 'adamw':
+            self.optimizer = torch.optim.AdamW(self.model.condition_provider.conditioners.self_wav.output_proj.parameters(), lr=self.cfg.optim.lr, **self.cfg.optim.adam)
+        elif self.cfg.optim.optimizer == 'dadam':
+            self.optimizer = optim.DAdaptAdam(self.model.condition_provider.conditioners.self_wav.output_proj.parameters(), lr=self.cfg.optim.lr, **self.cfg.optim.adam)
+        else:
+            raise ValueError(f"Unsupported LR Scheduler: {self.cfg.optim.lr_scheduler}")
+        '''
+        self.optimizer = builders.get_optimizer(self.model.condition_provider.conditioners.self_wav.output_proj, self.cfg.optim)
+        # self.optimizer = builders.get_optimizer(builders.get_optim_parameter_groups(self.model), self.cfg.optim) #Single GPU
         self.lr_scheduler = builders.get_lr_scheduler(self.optimizer, self.cfg.schedule, self.total_updates)
         self.register_stateful('compression_model', 'model', 'optimizer', 'lr_scheduler')
         self.register_best_state('model')
@@ -262,7 +289,7 @@ class MusicGenChordSolver(base.StandardSolver):
         ce = ce / K
         return ce, ce_per_codebook
 
-    @torch.no_grad()
+    # @torch.no_grad()
     def _prepare_tokens_and_attributes(
         self, batch: tp.Tuple[torch.Tensor, tp.List[SegmentWithAttributes]],
         check_synchronization_points: bool = False
@@ -393,14 +420,25 @@ class MusicGenChordSolver(base.StandardSolver):
             metrics['lr'] = self.optimizer.param_groups[0]['lr']
             if self.scaler is not None:
                 loss = self.scaler.scale(loss)
-                print(loss)
             self.deadlock_detect.update('scale')
             if self.cfg.fsdp.use:
                 loss.backward()
+                print("layer1_w_grad: ", self.model.condition_provider.conditioners.self_wav.output_proj.weight.grad)
+                # print("layer1_w_grad_sum: ", self.model.condition_provider.conditioners.self_wav.output_proj.weight.grad.sum())
+                print("layer1_b_grad : ", self.model.condition_provider.conditioners.self_wav.output_proj.bias.grad)
+                # print("layer1b_grad: ", self.model.condition_provider.conditioners.self_wav.output_proj[0].bias.grad)
+                # print("layer1_grad: ", self.model.condition_provider.conditioners.self_wav.output_proj[0].weight.grad)
+                # print("layer2b_grad: ", self.model.condition_provider.conditioners.self_wav.output_proj[2].bias.grad)
+                # print("layer2_grad: ", self.model.condition_provider.conditioners.self_wav.output_proj[2].weight.grad)
+                # print("layer3b_grad: ", self.model.condition_provider.conditioners.self_wav.output_proj[4].bias.grad)
+                # print("layer3_grad: ", self.model.condition_provider.conditioners.self_wav.output_proj[4].weight.grad)
                 flashy.distrib.average_tensors(self.model.buffers())
             elif self.cfg.optim.eager_sync:
                 with flashy.distrib.eager_sync_model(self.model):
                     loss.backward()
+                print("layer1_w_grad: ", self.model.condition_provider.conditioners.self_wav.output_proj.weight.grad)
+                # print("layer1_w_grad_sum: ", self.model.condition_provider.conditioners.self_wav.output_proj.weight.grad.sum())
+                print("layer1_b_grad : ", self.model.condition_provider.conditioners.self_wav.output_proj.bias.grad)
             else:
                 # this should always be slower but can be useful
                 # for weird use cases like multiple backwards.
@@ -421,12 +459,23 @@ class MusicGenChordSolver(base.StandardSolver):
                     )
             if self.scaler is None:
                 self.optimizer.step()
+                print("layer1_weight : ", self.model.condition_provider.conditioners.self_wav.output_proj.weight)
+                print("layer1_bias : ", self.model.condition_provider.conditioners.self_wav.output_proj.bias)
+                # print("layer1_grad: ", self.model.condition_provider.conditioners.self_wav.output_proj[0].weight.grad)
+                # print("layer1_weight : ", self.model.condition_provider.conditioners.self_wav.output_proj[0].weight)
+                # print("layer2_weight : ", self.model.condition_provider.conditioners.self_wav.output_proj[2].weight)
+                # print("layer2_bias : ", self.model.condition_provider.conditioners.self_wav.output_proj[2].bias)
+                # print("layer3_weight : ", self.model.condition_provider.conditioners.self_wav.output_proj[4].weight)
+                # print("layer3_bias : ", self.model.condition_provider.conditioners.self_wav.output_proj[4].bias)
             else:
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
+                print("layer1_weight : ", self.model.condition_provider.conditioners.self_wav.output_proj.weight)
+                print("layer1_bias : ", self.model.condition_provider.conditioners.self_wav.output_proj.bias)
             if self.lr_scheduler:
                 self.lr_scheduler.step()
             self.optimizer.zero_grad()
+            self.model.zero_grad() #For partial weights optimizing Multi-GPU
             self.deadlock_detect.update('optim')
             if self.scaler is not None:
                 scale = self.scaler.get_scale()

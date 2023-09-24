@@ -34,6 +34,7 @@ class ChordExtractor(nn.Module):
         self.n_chroma = n_chroma
         self.max_duration = max_duration
         self.chroma_len = chroma_len
+        self.to_timebin = self.max_duration/self.chroma_len
         self.timebin = winhop
 
         self.chords = chords.Chords()
@@ -140,14 +141,14 @@ class ChordExtractor(nn.Module):
                     multihot = torch.Tensor(crd[2])
                 else:
                     multihot = torch.concat([torch.Tensor(crd[2])[-crd[0]:],torch.Tensor(crd[2])[:-crd[0]]])
-                start_bin = round(float(s)/self.timebin)
-                end_bin = round(float(e)/self.timebin)
+                start_bin = round(float(s)/self.to_timebin)
+                end_bin = round(float(e)/self.to_timebin)
                 for j in range(start_bin,end_bin):
                     if count >= self.chroma_len: 
                         break
                     chroma[j]=multihot
                     count += 1
             
-            chromas.append(torch.Tensor(chroma))
+            chromas.append(chroma)
         
         return torch.stack(chromas, dim=0).to(self.device)

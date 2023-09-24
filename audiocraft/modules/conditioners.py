@@ -759,6 +759,7 @@ class ChromaChordConditioner(ChromaStemConditioner):
         self.chords = chords.Chords()
 
         #3 Layered MLP projection override
+        '''
         self.output_proj = nn.Sequential(
             nn.Linear(n_chroma, output_dim),
             nn.ReLU(inplace = True),
@@ -766,6 +767,7 @@ class ChromaChordConditioner(ChromaStemConditioner):
             nn.ReLU(inplace = True),
             nn.Linear(output_dim, output_dim)
         )
+        '''
 
 
     def _downsampling_factor(self) -> int:
@@ -838,9 +840,11 @@ class ChromaChordConditioner(ChromaStemConditioner):
         """Compute wav embedding, applying stem and chroma extraction."""
         # avoid 0-size tensors when we are working with null conds
         if wav.shape[-1] == 1:
+            # print("1515151")
             return self._extract_chroma(wav)
         stems = self._get_stemmed_wav(wav, sample_rate)
         chroma = self._extract_chroma(stems)
+        # print("2727272")
         return chroma
 
     @torch.no_grad()
@@ -883,12 +887,15 @@ class ChromaChordConditioner(ChromaStemConditioner):
             no_nullified_cond = x.wav.shape[-1] > 1
             if sampled_wav is not None:
                 chroma = self._compute_wav_embedding(sampled_wav, self.sample_rate)
+                # print("111111")
             elif self.cache is not None and no_undefined_paths and no_nullified_cond:
                 paths = [Path(p) for p in x.path if p is not None]
                 chroma = self.cache.get_embed_from_cache(paths, x)
+                # print("222222") #Works here
             else:
                 assert all(sr == x.sample_rate[0] for sr in x.sample_rate), "All sample rates in batch should be equal."
                 chroma = self._compute_wav_embedding(x.wav, x.sample_rate[0])
+                # print("333333") #and here in training
         else:
             chromas = []
             for wav, bpm, meter in zip(x.wav, x.bpm, x.meter):
@@ -951,8 +958,9 @@ class ChromaChordConditioner(ChromaStemConditioner):
         wav, lengths, *_ = x
         with torch.no_grad():
             embeds = self._get_wav_embedding(x)
-        # embeds = embeds.to(self.output_proj.weight)
-        embeds = embeds.to(self.output_proj[0].weight) #For MLP projection nn.Sequential
+        # print("CHROMA :::", embeds)
+        embeds = embeds.to(self.output_proj.weight)
+        # embeds = embeds.to(self.output_proj[0].weight) #For MLP projection nn.Sequential
         embeds = self.output_proj(embeds)
 
         if lengths is not None:

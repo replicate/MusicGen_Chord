@@ -107,6 +107,7 @@ class EmbeddingCache:
             cache = self._get_cache_path(path)
             if cache in self._current_batch_cache:
                 embed = self._current_batch_cache[cache]
+                logger.info('Cache loaded')
             else:
                 full_embed = self._compute_embed_fn(path, x, idx)
                 try:
