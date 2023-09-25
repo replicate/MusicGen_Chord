@@ -147,18 +147,18 @@ class MusicGenChordSolver(base.StandardSolver):
         mgmodel.set_generation_params(duration=30)
 
         chordprovider = mgmodel.lm.condition_provider.conditioners.self_wav
-        output_proj_weight = chordprovider.output_proj.state_dict() #not loaded yet?
+        # output_proj_weight = chordprovider.output_proj.state_dict() #not loaded yet?
 
         mgmodel.lm.condition_provider.conditioners.self_wav = ChromaChordConditioner(chordprovider.output_dim, chordprovider.sample_rate, chordprovider.chroma.n_chroma, int(math.log2(chordprovider.chroma.winlen)), chordprovider.duration, device='cuda')
         
         # mgmodel.lm.condition_provider.conditioners.self_wav.output_proj[0].load_state_dict(output_proj_weight) #For MLP projection
-        mgmodel.lm.condition_provider.conditioners.self_wav.output_proj.load_state_dict(output_proj_weight) 
+        # mgmodel.lm.condition_provider.conditioners.self_wav.output_proj.load_state_dict(output_proj_weight) 
 
         print('assignin mgmodel.lm params to LMModel !!!')
         self.model.load_state_dict(mgmodel.lm.state_dict())
         
         print('assigned params!!')
-        del mgmodel, chordprovider, output_proj_weight
+        del mgmodel, chordprovider #, output_proj_weight
         gc.collect()
 
 
@@ -175,7 +175,7 @@ class MusicGenChordSolver(base.StandardSolver):
 
 
         for name, param in self.model.condition_provider.conditioners.self_wav.output_proj.named_parameters():
-            print(name, param.requires_grad, param.retain_grad)
+            print(name, param.requires_grad)
             print(param)
 
 
@@ -423,22 +423,28 @@ class MusicGenChordSolver(base.StandardSolver):
             self.deadlock_detect.update('scale')
             if self.cfg.fsdp.use:
                 loss.backward()
-                print("layer1_w_grad: ", self.model.condition_provider.conditioners.self_wav.output_proj.weight.grad)
+                # print("layer1_w_grad: ", self.model.condition_provider.conditioners.self_wav.output_proj.weight.grad)
                 # print("layer1_w_grad_sum: ", self.model.condition_provider.conditioners.self_wav.output_proj.weight.grad.sum())
-                print("layer1_b_grad : ", self.model.condition_provider.conditioners.self_wav.output_proj.bias.grad)
-                # print("layer1b_grad: ", self.model.condition_provider.conditioners.self_wav.output_proj[0].bias.grad)
-                # print("layer1_grad: ", self.model.condition_provider.conditioners.self_wav.output_proj[0].weight.grad)
-                # print("layer2b_grad: ", self.model.condition_provider.conditioners.self_wav.output_proj[2].bias.grad)
-                # print("layer2_grad: ", self.model.condition_provider.conditioners.self_wav.output_proj[2].weight.grad)
-                # print("layer3b_grad: ", self.model.condition_provider.conditioners.self_wav.output_proj[4].bias.grad)
-                # print("layer3_grad: ", self.model.condition_provider.conditioners.self_wav.output_proj[4].weight.grad)
+                # print("layer1_b_grad : ", self.model.condition_provider.conditioners.self_wav.output_proj.bias.grad)
+                if self.model.condition_provider.conditioners.self_wav.output_proj[0].bias.device.index == 0:
+                    print("layer1b_grad: ", self.model.condition_provider.conditioners.self_wav.output_proj[0].bias.grad)
+                if self.model.condition_provider.conditioners.self_wav.output_proj[0].weight.device.index == 0:
+                    print("layer1_grad: ", self.model.condition_provider.conditioners.self_wav.output_proj[0].weight.grad)
+                if self.model.condition_provider.conditioners.self_wav.output_proj[2].bias.device.index == 0:
+                    print("layer2b_grad: ", self.model.condition_provider.conditioners.self_wav.output_proj[2].bias.grad)
+                if self.model.condition_provider.conditioners.self_wav.output_proj[2].weight.device.index == 0:
+                    print("layer2_grad: ", self.model.condition_provider.conditioners.self_wav.output_proj[2].weight.grad)
+                if self.model.condition_provider.conditioners.self_wav.output_proj[4].bias.device.index == 0:
+                    print("layer3b_grad: ", self.model.condition_provider.conditioners.self_wav.output_proj[4].bias.grad)
+                if self.model.condition_provider.conditioners.self_wav.output_proj[4].weight.device.index == 0:
+                    print("layer3_grad: ", self.model.condition_provider.conditioners.self_wav.output_proj[4].weight.grad)
                 flashy.distrib.average_tensors(self.model.buffers())
             elif self.cfg.optim.eager_sync:
                 with flashy.distrib.eager_sync_model(self.model):
                     loss.backward()
-                print("layer1_w_grad: ", self.model.condition_provider.conditioners.self_wav.output_proj.weight.grad)
+                # print("layer1_w_grad: ", self.model.condition_provider.conditioners.self_wav.output_proj.weight.grad)
                 # print("layer1_w_grad_sum: ", self.model.condition_provider.conditioners.self_wav.output_proj.weight.grad.sum())
-                print("layer1_b_grad : ", self.model.condition_provider.conditioners.self_wav.output_proj.bias.grad)
+                # print("layer1_b_grad : ", self.model.condition_provider.conditioners.self_wav.output_proj.bias.grad)
             else:
                 # this should always be slower but can be useful
                 # for weird use cases like multiple backwards.
@@ -459,19 +465,28 @@ class MusicGenChordSolver(base.StandardSolver):
                     )
             if self.scaler is None:
                 self.optimizer.step()
-                print("layer1_weight : ", self.model.condition_provider.conditioners.self_wav.output_proj.weight)
-                print("layer1_bias : ", self.model.condition_provider.conditioners.self_wav.output_proj.bias)
+                # print("layer1_weight : ", self.model.condition_provider.conditioners.self_wav.output_proj.weight)
+                # print("layer1_bias : ", self.model.condition_provider.conditioners.self_wav.output_proj.bias)
                 # print("layer1_grad: ", self.model.condition_provider.conditioners.self_wav.output_proj[0].weight.grad)
-                # print("layer1_weight : ", self.model.condition_provider.conditioners.self_wav.output_proj[0].weight)
-                # print("layer2_weight : ", self.model.condition_provider.conditioners.self_wav.output_proj[2].weight)
-                # print("layer2_bias : ", self.model.condition_provider.conditioners.self_wav.output_proj[2].bias)
-                # print("layer3_weight : ", self.model.condition_provider.conditioners.self_wav.output_proj[4].weight)
-                # print("layer3_bias : ", self.model.condition_provider.conditioners.self_wav.output_proj[4].bias)
+                # '''
+                if self.model.condition_provider.conditioners.self_wav.output_proj[0].weight.device.index == 0:
+                    print("layer1_weight : ", self.model.condition_provider.conditioners.self_wav.output_proj[0].weight)
+                if self.model.condition_provider.conditioners.self_wav.output_proj[0].bias.device.index == 0:
+                    print("layer1_bias : ", self.model.condition_provider.conditioners.self_wav.output_proj[0].bias)
+                if self.model.condition_provider.conditioners.self_wav.output_proj[2].weight.device.index == 0:
+                    print("layer2_weight : ", self.model.condition_provider.conditioners.self_wav.output_proj[2].weight)
+                if self.model.condition_provider.conditioners.self_wav.output_proj[2].bias.device.index == 0:
+                    print("layer2_bias : ", self.model.condition_provider.conditioners.self_wav.output_proj[2].bias)
+                if self.model.condition_provider.conditioners.self_wav.output_proj[4].weight.device.index == 0:
+                    print("layer3_weight : ", self.model.condition_provider.conditioners.self_wav.output_proj[4].weight)
+                if self.model.condition_provider.conditioners.self_wav.output_proj[4].bias.device.index == 0:
+                    print("layer3_bias : ", self.model.condition_provider.conditioners.self_wav.output_proj[4].bias)
+                # '''
             else:
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
-                print("layer1_weight : ", self.model.condition_provider.conditioners.self_wav.output_proj.weight)
-                print("layer1_bias : ", self.model.condition_provider.conditioners.self_wav.output_proj.bias)
+                # print("layer1_weight : ", self.model.condition_provider.conditioners.self_wav.output_proj.weight)
+                # print("layer1_bias : ", self.model.condition_provider.conditioners.self_wav.output_proj.bias)
             if self.lr_scheduler:
                 self.lr_scheduler.step()
             self.optimizer.zero_grad()
@@ -488,6 +503,10 @@ class MusicGenChordSolver(base.StandardSolver):
         for k, ce_q in enumerate(ce_per_codebook):
             metrics[f'ce_q{k + 1}'] = ce_q
             metrics[f'ppl_q{k + 1}'] = torch.exp(ce_q)
+
+        # for name, param in self.model.condition_provider.conditioners.self_wav.output_proj.named_parameters():
+        #     print(name, param.requires_grad)
+        #     print(param)
 
         return metrics
 

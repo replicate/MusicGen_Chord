@@ -88,7 +88,7 @@ logging:
   log_wandb: true
 
 schedule:
-  lr_scheduler: cosine
+  lr_scheduler: null
   cosine:
     warmup: 200
     lr_min_ratio: 1e-7
