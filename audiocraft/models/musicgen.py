@@ -284,7 +284,7 @@ class MusicGen:
             self,
             descriptions: tp.Sequence[tp.Optional[str]],
             prompt: tp.Optional[torch.Tensor],
-            melody_wavs: tp.Optional[tp.Union[MelodyList,tp.List[str]]] = None, bpm: tp.Optional[tp.Union[float,int]] = None, meter:tp.Optional[int] = None
+            melody_wavs: tp.Optional[tp.Union[MelodyList,tp.List[str]]] = None, bpm: tp.Optional[tp.Union[float,int,tp.List[float],tp.List[int]]] = None, meter:tp.Optional[tp.Union[int,tp.List[int]]] = None
     ) -> tp.Tuple[tp.List[ConditioningAttributes], tp.Optional[torch.Tensor]]:
         """Prepare model inputs.
 
@@ -312,7 +312,18 @@ class MusicGen:
             assert len(melody_wavs) == len(descriptions), \
                 f"number of melody wavs must match number of descriptions! " \
                 f"got melody len={len(melody_wavs)}, and descriptions len={len(descriptions)}"
-            for attr, melody in zip(attributes, melody_wavs):
+
+            if bpm is not None and (isinstance(bpm, int) or isinstance(bpm, float)):
+                bpm = [bpm for i in range(len(melody_wavs))]
+            elif bpm is not None and isinstance(bpm, tp.List):
+                assert len(melody_wavs) == len(bpm)
+
+            if meter is not None and (isinstance(meter, int) or isinstance(meter, float)):
+                meter = [meter for i in range(len(melody_wavs))]
+            elif meter is not None and isinstance(meter, tp.List):
+                assert len(melody_wavs) == len(meter)
+
+            for attr, melody, i in zip(attributes, melody_wavs, range(len(melody_wavs))):
                 if melody is None:
                     attr.wav['self_wav'] = WavCondition(
                         torch.zeros((1, 1, 1), device=self.device),
@@ -332,8 +343,8 @@ class MusicGen:
                         torch.tensor([self.duration*self.sample_rate], device=self.device),
                         sample_rate=[self.sample_rate],
                         path=[None],
-                        bpm = [bpm],
-                        meter = [meter]
+                        bpm = [bpm[i]],
+                        meter = [meter[i]]
                     )
 
         if prompt is not None:

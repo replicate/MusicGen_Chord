@@ -62,15 +62,15 @@ target_path = Path("/home/sake/chords_text_gen")
 
 # rand_idxs = random.sample(range(1, len(df)), 4)
 
-descriptions = ["bossa nova", "bossa nova"]
-chord_text = ['C G A:min F', 'F G E:min A:min']
-bpm = 60
+descriptions = ["orchestra symphony", "hard techno", "eurovision dance music"]
+chord_text = ['C E A:min F', "A:min A:min C G", 'F G E:min A:min']
+bpm = [90, 127, 134]
 in_triple = False
 
 for i in range(len(descriptions)):
     if in_triple:
         descriptions[i] = descriptions[i] + ", in triple"
-    descriptions[i] = descriptions[i] + f", bpm : {bpm}"
+    descriptions[i] = descriptions[i] + f", bpm : {bpm[i]}"
 
 '''
 dfs = []
@@ -91,7 +91,7 @@ for idx in rand_idxs:
 '''
 # print(len(descriptions))
 
-path = target_path/descriptions[0]
+# path = target_path/descriptions[0]
 for i in tqdm(range(1)): 
     # print(descriptions)
     # wav = model.generate(descriptions)  # generates 3 samples.
@@ -107,5 +107,6 @@ for i in tqdm(range(1)):
         # sidx = int(idx%5)
         # print(iidx, sidx)
         # path = target_path/paths[iidx]
+        path = target_path/descriptions[idx]
         path.mkdir(parents=True, exist_ok=True)
-        audio_write(f'{str(path/str(idx))}_{idx}', one_wav.cpu(), model.sample_rate, strategy="loudness", loudness_compressor=True)
+        audio_write(f'{str(path/chord_text[idx]/str(idx))}_{i}', one_wav.cpu(), model.sample_rate, strategy="loudness", loudness_compressor=True)
