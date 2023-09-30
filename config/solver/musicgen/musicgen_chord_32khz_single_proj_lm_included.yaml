@@ -1,0 +1,107 @@
+# @package __global__
+
+# This is the training loop solver
+# for the melody MusicGen model (text+chroma to music)
+# on monophonic audio sampled at 32 kHz
+defaults:
+  - musicgen/default
+  - /model: lm/musicgen_lm
+  - override /conditioner: chord2music
+  - override /dset: chord_32khz
+  - _self_
+
+solver: musicgen_chord
+
+autocast: true
+autocast_dtype: float16
+
+fsdp:
+  use: false
+  param_dtype: float32
+
+# EnCodec large trained on mono-channel music audio sampled at 32khz
+# with a total stride of 640 leading to 50 frames/s.
+# rvq.n_q=4, rvq.bins=2048, no quantization dropout
+# (transformer_lm card and n_q must be compatible)
+compression_model_checkpoint: //pretrained/facebook/encodec_32khz
+
+channels: 1
+sample_rate: 32000
+
+num_threads: 32
+
+deadlock:
+  use: true  # deadlock detection
+
+dataset:
+  num_workers: 8
+  batch_size: 24  # 8gpu
+  sample_on_weight: false  # Uniform sampling all the way
+  sample_on_duration: false  # Uniform sampling all the way
+  valid:
+    num_samples: 20
+  generate:
+    num_samples: 8
+  train:
+    num_samples: 400000
+
+checkpoint:
+  save_every: 1
+  save_last: true
+  keep_last: 5
+
+generate:
+  every: 1
+  num_workers: 8
+  path: samples
+  audio:
+    format: wav
+    strategy: loudness
+    sample_rate: ${sample_rate}
+    loudness_headroom_db: 14
+  lm:
+    prompted_samples: false
+    unprompted_samples: true
+    # prompt_duration: 5 # Can't be 0 
+    gen_duration: 30
+    use_sampling: true
+    temp: 1.0
+    top_k: 250
+    top_p: 0.0
+
+evaluate:
+  every: 1
+
+optim:
+  epochs: 10000
+  optimizer: adamw
+  # optimizer: dadam
+  lr: 1e-4
+  updates_per_epoch: 1000
+  ema:
+    use: false
+    updates: 10
+    device: cuda
+
+logging:
+  level: INFO
+  log_updates: 100
+  log_tensorboard: true
+  log_wandb: true
+
+schedule:
+  lr_scheduler: cosine
+  cosine:
+    warmup: 200
+    lr_min_ratio: 1e-5
+    cycle_length: 1.0
+
+tensorboard:
+  with_media_logging: true
+
+wandb:
+  with_media_logging: true
+  entity: sakemin
+  project: audiocraft_chord_single_proj_lm_6layer # project name
+  name:  single_proj_6_lm # optional name for the experiment
+  group:  # optional group

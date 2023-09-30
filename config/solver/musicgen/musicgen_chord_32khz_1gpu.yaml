@@ -77,7 +77,7 @@ optim:
   lr: 0.0001
   updates_per_epoch: 1000
   ema:
-    use: true
+    use: false
     updates: 10
     device: cuda
 

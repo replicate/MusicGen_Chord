@@ -10,13 +10,24 @@ defaults:
   - override /dset: chord_32khz
   - _self_
 
+classifier_free_guidance:
+  training_dropout: 0.2
+  inference_coef: 3.0
+
+attribute_dropout:
+  args:
+    active_on_eval: false
+  text: {}
+  wav:
+    self_wav: 0.0
+
 solver: musicgen_chord
 
-autocast: false
-# autocast_dtype: float16
+autocast: true
+autocast_dtype: float16
 
 fsdp:
-  use: true
+  use: false
   param_dtype: float32
 
 # EnCodec large trained on mono-channel music audio sampled at 32khz
@@ -31,9 +42,11 @@ sample_rate: 32000
 deadlock:
   use: true  # deadlock detection
 
+num_threads: 1
+
 dataset:
   num_workers: 8
-  batch_size: 24  # 8gpu
+  batch_size: 32  # 8gpu
   sample_on_weight: false  # Uniform sampling all the way
   sample_on_duration: false  # Uniform sampling all the way
   valid:
@@ -50,17 +63,17 @@ checkpoint:
 
 generate:
   every: 1
-  num_workers: 8
-  path: samples
-  audio:
-    format: wav
-    strategy: loudness
-    sample_rate: ${sample_rate}
-    loudness_headroom_db: 14
+  # num_workers: 1
+  # path: samples
+  # audio:
+  #   format: wav
+  #   strategy: loudness
+  #   sample_rate: ${sample_rate}
+  #   loudness_headroom_db: 14
   lm:
     prompted_samples: false
     # unprompted_samples: true
-    # prompt_duration: 5 # Can't be 0 
+    # prompt_duration: 5 # Can't be 0
     gen_duration: 30
     use_sampling: true
     # temp: 1.0
@@ -68,27 +81,27 @@ generate:
     top_p: 0.0
 
 evaluate:
-  every: 1
+  every: 10
 
 optim:
-  epochs: 10000
-  optimizer: adamw
-  # optimizer: dadam
-  lr: 0.0001
-  updates_per_epoch: 1000
+  epochs: 100
+  # optimizer: adamw
+  optimizer: dadam
+  lr: 5e-4
+  updates_per_epoch: 500000
   ema:
-    use: true
+    use: false
     updates: 10
     device: cuda
 
 logging:
   level: INFO
-  log_updates: 100
+  log_updates: 50000
   log_tensorboard: true
   log_wandb: true
 
 schedule:
-  lr_scheduler: cosine
+  lr_scheduler: null
   cosine:
     warmup: 200
     lr_min_ratio: 1e-7
@@ -100,6 +113,6 @@ tensorboard:
 wandb:
   with_media_logging: true
   entity: sakemin
-  project: audiocraft_chord_mlp_8gpu # project name
-  name:  3-layred-mlp-projection-8gpu # optional name for the experiment
+  project: audiocraft_chord_neo # project name
+  name:  single_layered_proj_lm_6_included # optional name for the experiment
   group:  # optional group

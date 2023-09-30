@@ -25,7 +25,7 @@ from ..data.audio_utils import normalize_audio
 from ..modules.conditioners import JointEmbedCondition, SegmentWithAttributes, WavCondition, ChromaChordConditioner
 from ..utils.cache import CachedBatchWriter, CachedBatchLoader
 from ..utils.samples.manager import SampleManager
-from ..utils.utils import get_dataset_from_loader, is_jsonable, warn_once
+from ..utils.utils import get_dataset_from_loader, is_jsonable, warn_once, dict_from_config
 
 from ..models import MusicGen
 
@@ -137,73 +137,97 @@ class MusicGenChordSolver(base.StandardSolver):
         self.logger.info("Compression model has %d codebooks with %d cardinality, and a framerate of %d",
                          self.compression_model.num_codebooks, self.compression_model.cardinality,
                          self.compression_model.frame_rate)
+
+        import os, psutil
+        print("Memory Usage : ", psutil.Process(os.getpid()).memory_info().rss / 1024 ** 2)
+
+        print("Initiating Model")
         # instantiate LM model
         self.model: models.LMModel = models.builders.get_lm_model(self.cfg).to(self.device)
 
-        # '''
+        '''
         # Change existing ChromaStemConditioner to ChromaChordConditioner and migrate params
         
+        print("Memory Usage : ", psutil.Process(os.getpid()).memory_info().rss / 1024 ** 2)
+
+        print("Loading pretrained model instance")
         mgmodel = MusicGen.get_pretrained('facebook/musicgen-melody')
         mgmodel.set_generation_params(duration=30)
 
-        chordprovider = mgmodel.lm.condition_provider.conditioners.self_wav
-        # output_proj_weight = chordprovider.output_proj.state_dict() #not loaded yet?
-
-        mgmodel.lm.condition_provider.conditioners.self_wav = ChromaChordConditioner(chordprovider.output_dim, chordprovider.sample_rate, chordprovider.chroma.n_chroma, int(math.log2(chordprovider.chroma.winlen)), chordprovider.duration, device='cuda')
+        print("Memory Usage : ", psutil.Process(os.getpid()).memory_info().rss / 1024 ** 2)
         
-        # mgmodel.lm.condition_provider.conditioners.self_wav.output_proj[0].load_state_dict(output_proj_weight) #For MLP projection
-        # mgmodel.lm.condition_provider.conditioners.self_wav.output_proj.load_state_dict(output_proj_weight) 
+        output_proj_weight = mgmodel.lm.condition_provider.conditioners['self_wav'].output_proj.state_dict() #not loaded yet?
+
+        mgmodel.lm.condition_provider.conditioners['self_wav'] = ChromaChordConditioner(int(mgmodel.lm.condition_provider.conditioners['self_wav'].output_dim), int(mgmodel.lm.condition_provider.conditioners['self_wav'].sample_rate), int(mgmodel.lm.condition_provider.conditioners['self_wav'].chroma.n_chroma), int(math.log2(mgmodel.lm.condition_provider.conditioners['self_wav'].chroma.winlen)), float(mgmodel.lm.condition_provider.conditioners['self_wav'].duration), device=self.device)
+        
+        # mgmodel.lm.condition_provider.conditioners['self_wav'].output_proj[0].load_state_dict(output_proj_weight) #For MLP projection
+        mgmodel.lm.condition_provider.conditioners['self_wav'].output_proj.load_state_dict(output_proj_weight) 
 
         print('assignin mgmodel.lm params to LMModel !!!')
         self.model.load_state_dict(mgmodel.lm.state_dict())
-        
+        self.model.to(self.device)
+
         print('assigned params!!')
-        del mgmodel, chordprovider #, output_proj_weight
+
+        print("Memory Usage : ", psutil.Process(os.getpid()).memory_info().rss / 1024 ** 2)
+
+        print('deleted instances')
+        del mgmodel, output_proj_weight
         gc.collect()
 
-
-        for name, param in self.model.named_parameters():
-            param.requires_grad = True
-            # if not param.retain_grad:
-            #     print("!retain_grad", name)
-            # if not param.is_leaf:
-            #     print("!is_leaf", name)
+        print("Memory Usage : ", psutil.Process(os.getpid()).memory_info().rss / 1024 ** 2)
 
 
-        # self.model.condition_provider.conditioners.self_wav.output_proj.weight.requires_grad = True
-        # self.model.condition_provider.conditioners.self_wav.output_proj.bias.requires_grad = True
 
+        
+        # self.model.condition_provider.conditioners['description'].output_proj.weight.requires_grad = True
+        '''
+        
+        '''
+        for param in self.model.parameters():
+            param.requires_grad = False
 
-        for name, param in self.model.condition_provider.conditioners.self_wav.output_proj.named_parameters():
-            print(name, param.requires_grad)
-            print(param)
+        self.model.condition_provider.conditioners['self_wav'].output_proj.weight.requires_grad = True
+        self.model.condition_provider.conditioners['self_wav'].output_proj.bias.requires_grad = True
 
+        
+        # for i in range(6):
+        #     for param in self.model.transformer.layers[i].parameters():
+        #         param.requires_grad = True
+        '''
 
-        # '''
+        # for name, param in self.model.condition_provider.conditioners['self_wav'].output_proj.named_parameters():
+        #     print(name, param.requires_grad)
+        #     print(param)
+        '''
+
         if self.cfg.fsdp.use:
             assert not self.cfg.autocast, "Cannot use autocast with fsdp"
             self.model = self.wrap_with_fsdp(self.model)
-        # '''
-
 
 
         self.register_ema('model')
 
         # initialize optimization
+        '''
+        # model_groups = [
+        #     {'params': self.model.condition_provider.conditioners['self_wav'].output_proj.parameters()}, #, 'lr': 1e-4},
+        #     {'params': self.model.transformer.layers[0].parameters()},
+        #     {'params': self.model.transformer.layers[1].parameters()},
+        #     {'params': self.model.transformer.layers[2].parameters()},
+        #     {'params': self.model.transformer.layers[3].parameters()},
+        #     {'params': self.model.transformer.layers[4].parameters()},
+        #     {'params': self.model.transformer.layers[5].parameters()}
+        # ]
+        '''
+        
+        # self.optimizer = builders.get_optimizer(model_groups, self.cfg.optim) #including tf layers
 
-        # Manually instancing the optimizer only assigning output.proj
+        # self.optimizer = builders.get_optimizer(self.model.condition_provider.conditioners['self_wav'].output_proj, self.cfg.optim)
         '''
-        if self.cfg.optim.optimizer == 'adam':
-            self.optimizer = torch.optim.Adam(self.model.condition_provider.conditioners.self_wav.output_proj.parameters(), lr=self.cfg.optim.lr, **self.cfg.optim.adam)
-        elif self.cfg.optim.optimizer == 'adamw':
-            self.optimizer = torch.optim.AdamW(self.model.condition_provider.conditioners.self_wav.output_proj.parameters(), lr=self.cfg.optim.lr, **self.cfg.optim.adam)
-        elif self.cfg.optim.optimizer == 'dadam':
-            self.optimizer = optim.DAdaptAdam(self.model.condition_provider.conditioners.self_wav.output_proj.parameters(), lr=self.cfg.optim.lr, **self.cfg.optim.adam)
-        else:
-            raise ValueError(f"Unsupported LR Scheduler: {self.cfg.optim.lr_scheduler}")
-        '''
-        self.optimizer = builders.get_optimizer(self.model.condition_provider.conditioners.self_wav.output_proj, self.cfg.optim)
-        # self.optimizer = builders.get_optimizer(builders.get_optim_parameter_groups(self.model), self.cfg.optim) #Single GPU
+
+        self.optimizer = builders.get_optimizer(builders.get_optim_parameter_groups(self.model), self.cfg.optim) #Single GPU
+        
         self.lr_scheduler = builders.get_lr_scheduler(self.optimizer, self.cfg.schedule, self.total_updates)
         self.register_stateful('compression_model', 'model', 'optimizer', 'lr_scheduler')
         self.register_best_state('model')
@@ -223,6 +247,21 @@ class MusicGenChordSolver(base.StandardSolver):
                 self.scaler = torch.cuda.amp.GradScaler()
             self.register_stateful('scaler')
 
+    def freeze_parameters(self) -> None:
+        for param in self.model.parameters():
+            param.requires_grad = False
+
+        self.model.condition_provider.conditioners['self_wav'].output_proj.weight.requires_grad = True
+        self.model.condition_provider.conditioners['self_wav'].output_proj.bias.requires_grad = True
+
+        '''
+        # for i in range(6):
+        #     for param in self.model.transformer.layers[i].parameters():
+        #         param.requires_grad = True
+        '''
+        print("Parameters frozen!")
+        self.optimizer = builders.get_optimizer(builders.get_optim_parameter_groups(self.model), self.cfg.optim) #Single GPU
+
     def build_dataloaders(self) -> None:
         """Instantiate audio dataloaders for each stage."""
         self.dataloaders = builders.get_audio_datasets(self.cfg, dataset_type=self.DATASET_TYPE)
@@ -233,6 +272,19 @@ class MusicGenChordSolver(base.StandardSolver):
         self.log_model_summary(self.compression_model)
         self.logger.info("LM model:")
         self.log_model_summary(self.model)
+
+    def run(self):
+        """Training loop."""
+        assert len(self.state_dict()) > 0
+        self.restore(replay_metrics=True)  # load checkpoint and replay history
+        self.log_hyperparams(dict_from_config(self.cfg))
+        self.freeze_parameters()
+        for epoch in range(self.epoch, self.cfg.optim.epochs + 1):
+            if self.should_stop_training():
+                return
+            self.run_epoch()
+            # Commit will send the metrics to Dora and save checkpoints by default.
+            self.commit()
 
     def load_state_dict(self, state: dict) -> None:
         if 'condition_provider' in state:
@@ -426,6 +478,7 @@ class MusicGenChordSolver(base.StandardSolver):
                 # print("layer1_w_grad: ", self.model.condition_provider.conditioners.self_wav.output_proj.weight.grad)
                 # print("layer1_w_grad_sum: ", self.model.condition_provider.conditioners.self_wav.output_proj.weight.grad.sum())
                 # print("layer1_b_grad : ", self.model.condition_provider.conditioners.self_wav.output_proj.bias.grad)
+                '''
                 if self.model.condition_provider.conditioners.self_wav.output_proj[0].bias.device.index == 0:
                     print("layer1b_grad: ", self.model.condition_provider.conditioners.self_wav.output_proj[0].bias.grad)
                 if self.model.condition_provider.conditioners.self_wav.output_proj[0].weight.device.index == 0:
@@ -438,17 +491,21 @@ class MusicGenChordSolver(base.StandardSolver):
                     print("layer3b_grad: ", self.model.condition_provider.conditioners.self_wav.output_proj[4].bias.grad)
                 if self.model.condition_provider.conditioners.self_wav.output_proj[4].weight.device.index == 0:
                     print("layer3_grad: ", self.model.condition_provider.conditioners.self_wav.output_proj[4].weight.grad)
+                '''
                 flashy.distrib.average_tensors(self.model.buffers())
             elif self.cfg.optim.eager_sync:
                 with flashy.distrib.eager_sync_model(self.model):
                     loss.backward()
-                # print("layer1_w_grad: ", self.model.condition_provider.conditioners.self_wav.output_proj.weight.grad)
-                # print("layer1_w_grad_sum: ", self.model.condition_provider.conditioners.self_wav.output_proj.weight.grad.sum())
-                # print("layer1_b_grad : ", self.model.condition_provider.conditioners.self_wav.output_proj.bias.grad)
+                print("layer1_w_grad: ", self.model.condition_provider.conditioners.self_wav.output_proj.weight.grad)
+                print("layer1_w_grad_sum: ", self.model.condition_provider.conditioners.self_wav.output_proj.weight.grad.sum())
+                print("layer1_b_grad : ", self.model.condition_provider.conditioners.self_wav.output_proj.bias.grad)
             else:
                 # this should always be slower but can be useful
                 # for weird use cases like multiple backwards.
                 loss.backward()
+                print("layer1_w_grad: ", self.model.condition_provider.conditioners.self_wav.output_proj.weight.grad)
+                print("layer1_w_grad_sum: ", self.model.condition_provider.conditioners.self_wav.output_proj.weight.grad.sum())
+                print("layer1_b_grad : ", self.model.condition_provider.conditioners.self_wav.output_proj.bias.grad)
                 flashy.distrib.sync_model(self.model)
             self.deadlock_detect.update('backward')
             # print(model_output)
@@ -468,7 +525,9 @@ class MusicGenChordSolver(base.StandardSolver):
                 # print("layer1_weight : ", self.model.condition_provider.conditioners.self_wav.output_proj.weight)
                 # print("layer1_bias : ", self.model.condition_provider.conditioners.self_wav.output_proj.bias)
                 # print("layer1_grad: ", self.model.condition_provider.conditioners.self_wav.output_proj[0].weight.grad)
-                # '''
+                # if self.model.transformer.layers[0].linear1.weight.device.index == 0:
+                # print("lm_layer0_linear1_weight : ", self.model.transformer.layers[0].linear1.weight)
+                '''
                 if self.model.condition_provider.conditioners.self_wav.output_proj[0].weight.device.index == 0:
                     print("layer1_weight : ", self.model.condition_provider.conditioners.self_wav.output_proj[0].weight)
                 if self.model.condition_provider.conditioners.self_wav.output_proj[0].bias.device.index == 0:
@@ -481,16 +540,20 @@ class MusicGenChordSolver(base.StandardSolver):
                     print("layer3_weight : ", self.model.condition_provider.conditioners.self_wav.output_proj[4].weight)
                 if self.model.condition_provider.conditioners.self_wav.output_proj[4].bias.device.index == 0:
                     print("layer3_bias : ", self.model.condition_provider.conditioners.self_wav.output_proj[4].bias)
-                # '''
+                '''
             else:
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
+
+                print("layer_weight : ", self.model.condition_provider.conditioners.self_wav.output_proj.weight)
+                print("layer_bias : ", self.model.condition_provider.conditioners.self_wav.output_proj.bias)
+                print("lm_layer0_linear1_weight : ", self.model.transformer.layers[0].linear1.weight)
                 # print("layer1_weight : ", self.model.condition_provider.conditioners.self_wav.output_proj.weight)
                 # print("layer1_bias : ", self.model.condition_provider.conditioners.self_wav.output_proj.bias)
             if self.lr_scheduler:
                 self.lr_scheduler.step()
             self.optimizer.zero_grad()
-            self.model.zero_grad() #For partial weights optimizing Multi-GPU
+            # self.model.zero_grad() #For partial weights optimizing Multi-GPU
             self.deadlock_detect.update('optim')
             if self.scaler is not None:
                 scale = self.scaler.get_scale()

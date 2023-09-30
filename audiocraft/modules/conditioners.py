@@ -759,7 +759,7 @@ class ChromaChordConditioner(ChromaStemConditioner):
         self.chords = chords.Chords()
 
         #3 Layered MLP projection override
-        # '''
+        '''
         self.output_proj = nn.Sequential(
             nn.Linear(n_chroma, 128),
             nn.ReLU(),
@@ -767,7 +767,7 @@ class ChromaChordConditioner(ChromaStemConditioner):
             nn.ReLU(),
             nn.Linear(256, output_dim)
         )
-        # '''
+        '''
 
 
     def _downsampling_factor(self) -> int:
@@ -959,8 +959,8 @@ class ChromaChordConditioner(ChromaStemConditioner):
         with torch.no_grad():
             embeds = self._get_wav_embedding(x)
         # print("CHROMA :::", embeds)
-        # embeds = embeds.to(self.output_proj.weight)
-        embeds = embeds.to(self.output_proj[0].weight) #For MLP projection nn.Sequential
+        embeds = embeds.to(self.output_proj.weight)
+        # embeds = embeds.to(self.output_proj[0].weight) #For MLP projection nn.Sequential
         embeds = self.output_proj(embeds)
 
         if lengths is not None:
