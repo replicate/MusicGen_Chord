@@ -328,8 +328,8 @@ class MusicGen:
                     )
                 else :
                     attr.wav['self_wav'] = WavChordTextCondition(
-                        melody,
-                        torch.tensor([0], device=self.device),
+                        [melody],
+                        torch.tensor([self.duration*self.sample_rate], device=self.device),
                         sample_rate=[self.sample_rate],
                         path=[None],
                         bpm = [bpm],

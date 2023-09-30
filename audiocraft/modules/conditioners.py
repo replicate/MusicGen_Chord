@@ -171,13 +171,13 @@ def nullify_wav(cond: tp.Union[WavCondition,WavChordTextCondition]) -> tp.Union[
         )
     else:
         return WavChordTextCondition(
-            wav='N',
-            length=cond.length,
+            wav=['N']* len(cond.wav),
+            length=torch.tensor([0] * len(cond.wav), device=cond.length.device),
             sample_rate=cond.sample_rate,
             path=[None],
             seek_time=[None],
             bpm = cond.bpm,
-            meter = cond.meter,
+            meter = cond.meter
         )
 
 
@@ -902,6 +902,7 @@ class ChromaChordConditioner(ChromaStemConditioner):
                 chroma = torch.zeros([self.chroma_len, self.dim])
                 count = 0
                 offset = 0
+                
                 stext = wav.split(" ")
                 barsec = 60/(bpm/meter)
                 timebin = barsec * self.bar2chromabin
@@ -1534,7 +1535,7 @@ class ConditioningProvider(nn.Module):
                     wavs[attribute].append(wav.flatten())  # [T]
                 else:
                     wav, length, sample_rate, path, seek_time, bpm, meter = sample.wav[attribute]
-                    wavs[attribute].append(wav)
+                    wavs[attribute].append(wav[0])
                     bpms[attribute].append(bpm[0])
                     meters[attribute].append(meter[0])
                 lengths[attribute].append(length)
