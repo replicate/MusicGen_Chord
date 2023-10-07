@@ -21,13 +21,13 @@ class ChordExtractor(nn.Module):
 
     def __init__(self, device, sample_rate, max_duration, chroma_len, n_chroma, winhop):
         super().__init__()
-        self.config = HParams.load("/home/sake/musicgen/MusicGen_Chord/audiocraft/modules/btc/run_config.yaml") #gotta specify the path for run_config.yaml of btc
+        self.config = HParams.load("audiocraft/modules/btc/run_config.yaml") #gotta specify the path for run_config.yaml of btc
 
         # self.config.feature['large_voca'] = False
         # self.config.model['num_chords'] = 25
 
-        self.model_file = '/home/sake/musicgen/MusicGen_Chord/audiocraft/modules/btc/test/btc_model_large_voca.pt'
-        # self.model_file = '/home/sake/musicgen/MusicGen_Chord/audiocraft/modules/btc/test/btc_model.pt'
+        self.model_file = 'audiocraft/modules/btc/test/btc_model_large_voca.pt'
+        # self.model_file = 'audiocraft/modules/btc/test/btc_model.pt'
         self.idx_to_chord = idx2voca_chord()
         self.sr = sample_rate
 
@@ -123,7 +123,7 @@ class ChordExtractor(nn.Module):
 
             strlines = ''.join(lines)
 
-            chroma = torch.zeros([self.chroma_len,self.n_chroma])
+            chroma = []
 
             count = 0
             for line in lines:
@@ -146,9 +146,9 @@ class ChordExtractor(nn.Module):
                 for j in range(start_bin,end_bin):
                     if count >= self.chroma_len: 
                         break
-                    chroma[j]=multihot
+                    chroma.append(multihot)
                     count += 1
             
-            chromas.append(chroma)
+            chromas.append(torch.stack(chroma, dim=0))
         
         return torch.stack(chromas, dim=0).to(self.device)

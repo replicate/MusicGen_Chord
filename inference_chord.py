@@ -18,7 +18,8 @@ from audiocraft.models.builders import get_lm_model
 
 device = 'cuda'
 
-loaded = torch.load("/home/sake/musicgen_chord.th")
+# loaded = torch.load("/home/sake/musicgen_chord.th")
+loaded = torch.load("/home/sake/500000.th")
 def _delete_param(cfg, full_name: str):
     parts = full_name.split('.')
     for part in parts[:-1]:

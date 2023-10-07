@@ -937,7 +937,6 @@ class ChromaChordConditioner(ChromaStemConditioner):
                 chroma = chroma.repeat(1, n_repeat, 1)
                 chroma = chroma[:, :self.chroma_len]
                 logger.debug(f"Chroma was repeated to match length! ({T} -> {chroma.shape[1]})")
-
         return chroma
 
     def tokenize(self, x: tp.Union[WavCondition, WavChordTextCondition]) -> tp.Union[WavCondition, WavChordTextCondition]:
@@ -958,17 +957,25 @@ class ChromaChordConditioner(ChromaStemConditioner):
         """
         wav, lengths, *_ = x
         with torch.no_grad():
-            embeds = self._get_wav_embedding(x)
-        # print("CHROMA :::", embeds)
+            embeds = self._get_wav_embedding(x) #chroma
         embeds = embeds.to(self.output_proj.weight)
-        # embeds = embeds.to(self.output_proj[0].weight) #For MLP projection nn.Sequential
         embeds = self.output_proj(embeds)
 
-        if lengths is not None:
-            lengths = lengths / self._downsampling_factor()
-            mask = length_to_mask(lengths, max_len=embeds.shape[1]).int()  # type: ignore
+        if self.match_len_on_eval:
+            if lengths is not None:
+                for i in range(len(lengths)):
+                    if lengths[i] > 0 and lengths[i] < self.duration * self.sample_rate:
+                        lengths[i] = torch.Tensor([(self.duration+1) * self.sample_rate])
+                lengths = lengths / self._downsampling_factor()
+                mask = length_to_mask(lengths, max_len=embeds.shape[1]).int()  # type: ignore
+            else:
+                mask = torch.ones_like(embeds)
         else:
-            mask = torch.ones_like(embeds)
+            if lengths is not None:
+                lengths = lengths / self._downsampling_factor()
+                mask = length_to_mask(lengths, max_len=embeds.shape[1]).int()  # type: ignore
+            else:
+                mask = torch.ones_like(embeds)
 
         embeds = (embeds.to(self.device) * mask.unsqueeze(2).to(self.device))
 
